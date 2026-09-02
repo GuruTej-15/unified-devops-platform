@@ -1,4 +1,4 @@
-import { connectDatabase } from '../config/database.js';
+import connectDB from '../config/database.js';
 import { connectRedis } from '../config/redis.js';
 import { initCiWorker } from '../modules/cicd/queue/ciWorker.js';
 import { scheduleRepeatableReconciliation } from '../modules/cicd/queue/ciQueue.js';
@@ -11,7 +11,7 @@ logger.info('====================================================');
 async function startWorkerProcess() {
   try {
     // 1. Connect MongoDB
-    await connectDatabase();
+    await connectDB();
 
     // 2. Connect Redis
     await connectRedis();
