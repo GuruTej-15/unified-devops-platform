@@ -21,12 +21,23 @@ router.get(
   controller.getIssuePipelineRuns
 );
 
-// Manual reconciliation
+// Manual synchronous reconciliation (repository-scoped)
 router.post(
   '/repositories/:repoId/pipelines/sync',
   authenticate,
   projectAccess('owner', 'admin'),
   controller.syncRepositoryPipelines
 );
+
+// Asynchronous project reconciliation (Phase 2B BullMQ queue job)
+router.post(
+  '/cicd/reconcile',
+  authenticate,
+  projectAccess('owner', 'admin'),
+  controller.triggerReconciliation
+);
+
+// Queue health & observability diagnostics (Phase 2B)
+router.get('/cicd/queue-health', authenticate, projectAccess(), controller.getQueueHealthStatus);
 
 export default router;
