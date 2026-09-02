@@ -33,6 +33,7 @@ Deployment    (PLANNED — Phase 4)
 ## Implementation Status by Phase
 
 ### [COMPLETE] Phase 1 Core Foundation
+
 - **Authentication & RBAC**: JWT with `HttpOnly SameSite=Strict` cookies, password hashing with `bcryptjs` (12 rounds), project-scoped roles (`owner`, `admin`, `developer`, `viewer`).
 - **Sequential Issue Tracking**: Atomically sequenced issue keys starting at 100 (`PAY-101`, `PAY-102`).
 - **GitHub VCS Integration**: Repository connection with AES-256-GCM encrypted PAT at rest, GraphQL commit/PR synchronization.
@@ -41,12 +42,14 @@ Deployment    (PLANNED — Phase 4)
 - **Append-Only Audit Logging & Socket.io Gateway**: Real-time project room event broadcasting.
 
 ### [COMPLETE] Phase 2A — GitHub Actions CI Pipeline Visibility
+
 - **HMAC-SHA256 Webhook Gateway**: Verifies `X-Hub-Signature-256` using constant-time comparison.
 - **Idempotent CI Models**: `Pipeline` workflow definitions and `PipelineRun` executions with `{ repository: 1, externalRunId: 1 }` unique indexing.
 - **Issue Traceability in CI**: Multi-step extraction linking workflow runs to issues (`PAY-101`).
 - **Real-Time Delivery State**: Dynamic CI stage in `DeliveryStateTracker.jsx` and dashboard `PipelineSummary.jsx`.
 
 ### [IMPLEMENTED & TESTED] Phase 2B — Durable CI Event Infrastructure & Reconciliation
+
 - **Redis + BullMQ Architecture**: Fast webhook intake (HTTP 202) enqueueing durable jobs to the `ci-events` BullMQ queue.
 - **Atomic Delivery Idempotency**: `WebhookDelivery` model with unique `deliveryId` constraint (`X-GitHub-Delivery`) guaranteeing only one job is claimed/enqueued across concurrent delivery races.
 - **Dedicated Worker Process**: Standalone executable `npm run worker:ci` consuming CI jobs with bounded exponential backoff (`CI_JOB_ATTEMPTS`, `CI_JOB_BACKOFF_MS`).
@@ -58,6 +61,7 @@ Deployment    (PLANNED — Phase 4)
 ---
 
 ### [PLANNED] Future Roadmap
+
 - **Phase 2C — Jenkins Integration**: CI provider abstraction for Jenkins build and test jobs.
 - **Phase 3 — Governance & Security Gates**: Trivy & Snyk vulnerability scan gates, policy approval sign-offs, and cryptographic audit log hash chaining.
 - **Phase 4 — Self-Hosted Deployment & Rollout**: Docker / Kubernetes release deployment tracking, production container packaging, and Cypress E2E automation.
