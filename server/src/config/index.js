@@ -30,16 +30,28 @@ const config = {
   github: {
     clientId: process.env.GITHUB_CLIENT_ID || '',
     clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET || '',
   },
 
   redis: {
-    url: process.env.REDIS_URL || '',
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+  },
+
+  cicd: {
+    queueName: process.env.CI_QUEUE_NAME || 'ci-events',
+    workerConcurrency: parseInt(process.env.CI_WORKER_CONCURRENCY, 10) || 5,
+    jobAttempts: parseInt(process.env.CI_JOB_ATTEMPTS, 10) || 5,
+    backoffMs: parseInt(process.env.CI_JOB_BACKOFF_MS, 10) || 2000,
+    reconciliationLookbackMinutes:
+      parseInt(process.env.CI_RECONCILIATION_LOOKBACK_MINUTES, 10) || 60,
+    reconciliationIntervalMinutes:
+      parseInt(process.env.CI_RECONCILIATION_INTERVAL_MINUTES, 10) || 15,
   },
 };
 
 // Validate critical config in production
 if (config.env === 'production') {
-  const required = ['JWT_SECRET', 'ENCRYPTION_KEY', 'MONGODB_URI'];
+  const required = ['JWT_SECRET', 'ENCRYPTION_KEY', 'MONGODB_URI', 'REDIS_URL'];
   for (const key of required) {
     if (!process.env[key]) {
       throw new Error(`Missing required environment variable: ${key}`);

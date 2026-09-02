@@ -1,10 +1,18 @@
+import crypto from 'node:crypto';
 import WebhookService from './webhook.service.js';
 import CicdService from './cicd.service.js';
+import WebhookDelivery from './webhookDelivery.model.js';
+import {
+  enqueueWebhookEvent,
+  enqueueReconciliationJob,
+  getQueueHealth as fetchQueueHealth,
+} from './queue/ciQueue.js';
 import config from '../../config/index.js';
 import { sendSuccess, sendPaginated } from '../../shared/apiResponse.js';
+import logger from '../../shared/logger.js';
 
 /**
- * Handle incoming GitHub Webhooks (HMAC-SHA256 authenticated).
+ * Handle incoming GitHub Webhooks (HMAC-SHA256 authenticated + Atomic Delivery Claim + Queue).
  */
 export const handleGitHubWebhook = async (req, res) => {
   const signature = req.headers['x-hub-signature-256'];
@@ -22,7 +30,14 @@ export const handleGitHubWebhook = async (req, res) => {
     });
   }
 
-  // 2. Validate payload structure
+  // 2. Validate payload and headers
+  if (!deliveryId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing X-GitHub-Delivery header',
+    });
+  }
+
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({
       success: false,
@@ -30,18 +45,84 @@ export const handleGitHubWebhook = async (req, res) => {
     });
   }
 
-  // 3. Process the event asynchronously / idempotently
-  const result = await WebhookService.processGitHubWebhook({
+  // 3. Compute payload digest for audit/integrity
+  const payloadDigest = req.rawBody
+    ? crypto.createHash('sha256').update(req.rawBody).digest('hex')
+    : '';
+
+  // 4. Atomic Webhook Delivery Claim
+  const { claimed, delivery, existing } = await WebhookDelivery.claimDelivery({
+    deliveryId,
+    event: event || 'unknown',
+    action: req.body.action || '',
+    externalRepoId: String(req.body.repository?.id || ''),
+    payloadDigest,
+  });
+
+  if (!claimed) {
+    logger.info(`Duplicate webhook delivery ${deliveryId} received. Safely returning 202.`);
+    return res.status(202).json({
+      success: true,
+      message: 'Duplicate webhook delivery already claimed',
+      data: {
+        deliveryId,
+        status: existing?.status || 'already_received',
+        duplicate: true,
+      },
+    });
+  }
+
+  // 5. Enqueue durable BullMQ job
+  const enqueueResult = await enqueueWebhookEvent({
     deliveryId,
     event,
     payload: req.body,
   });
 
-  return res.status(result.statusCode || 202).json({
-    success: result.statusCode === 202,
-    message: result.ignored ? result.reason : 'Webhook processed successfully',
-    data: result.data || null,
+  if (delivery && enqueueResult?.jobId) {
+    await WebhookDelivery.findByIdAndUpdate(delivery._id, {
+      status: 'queued',
+      jobId: String(enqueueResult.jobId),
+    });
+  }
+
+  // 6. Fast response (HTTP 202 Accepted)
+  return res.status(202).json({
+    success: true,
+    message: 'Webhook accepted for processing',
+    data: {
+      deliveryId,
+      status: 'accepted',
+      enqueued: enqueueResult.enqueued,
+    },
   });
+};
+
+/**
+ * Trigger manual asynchronous reconciliation for a project or repository.
+ */
+export const triggerReconciliation = async (req, res) => {
+  const { repositoryId, lookbackMinutes } = req.body || {};
+  const result = await enqueueReconciliationJob({
+    projectId: req.params.projectId,
+    repositoryId: repositoryId || null,
+    lookbackMinutes: lookbackMinutes ? parseInt(lookbackMinutes, 10) : null,
+    actorId: req.user.id,
+  });
+
+  return res.status(202).json({
+    success: true,
+    message: 'Reconciliation job accepted for processing',
+    data: result,
+  });
+};
+
+/**
+ * Retrieve queue health and operational metrics.
+ */
+export const getQueueHealthStatus = async (_req, res) => {
+  const health = await fetchQueueHealth();
+  sendSuccess(res, { data: health });
 };
 
 /**
@@ -83,7 +164,7 @@ export const getIssuePipelineRuns = async (req, res) => {
 };
 
 /**
- * Trigger manual reconciliation of workflow runs for a repository.
+ * Trigger synchronous reconciliation of workflow runs for a repository (Phase 2A fallback).
  */
 export const syncRepositoryPipelines = async (req, res) => {
   const stats = await CicdService.reconcileRepositoryRuns(req.params.repoId, req.user.id);

@@ -7,18 +7,21 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "worker:ci": "node src/workers/ci.worker.js",
     "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --forceExit --detectOpenHandles",
     "test:watch": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --watch"
   },
   "dependencies": {
     "@octokit/graphql": "^8.1.0",
     "bcryptjs": "^3.0.2",
+    "bullmq": "^6.3.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.12.0",
     "socket.io": "^4.8.1",

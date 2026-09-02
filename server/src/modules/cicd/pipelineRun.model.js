@@ -7,6 +7,12 @@ import {
   PIPELINE_CONCLUSION_VALUES,
 } from '../../shared/constants.js';
 
+export const STATUS_WEIGHT = {
+  queued: 1,
+  in_progress: 2,
+  completed: 3,
+};
+
 const pipelineRunSchema = new mongoose.Schema(
   {
     project: {
@@ -138,6 +144,49 @@ pipelineRunSchema.index({ matchedIssueKeys: 1 });
 pipelineRunSchema.index({ pullRequestNumber: 1 });
 pipelineRunSchema.index({ status: 1 });
 pipelineRunSchema.index({ webhookDeliveryId: 1 });
+
+/**
+ * Checks if status progression is valid (prevents terminal 'completed' status from regressing).
+ */
+pipelineRunSchema.statics.isStatusProgressionAllowed = function (currentStatus, incomingStatus) {
+  if (!currentStatus) return true;
+  const currentWeight = STATUS_WEIGHT[currentStatus] || 0;
+  const incomingWeight = STATUS_WEIGHT[incomingStatus] || 0;
+  return incomingWeight >= currentWeight;
+};
+
+/**
+ * Idempotently upserts a PipelineRun while protecting terminal status and conclusion.
+ */
+pipelineRunSchema.statics.upsertWithStatusGuard = async function (filter, updateData) {
+  const existing = await this.findOne(filter);
+
+  if (existing) {
+    // If existing run is already in terminal or advanced status, do not regress status or clear conclusion
+    const currentWeight = STATUS_WEIGHT[existing.status] || 0;
+    const incomingWeight = STATUS_WEIGHT[updateData.status] || 0;
+
+    if (incomingWeight < currentWeight) {
+      // Retain existing status and conclusion
+      updateData.status = existing.status;
+      if (existing.conclusion && !updateData.conclusion) {
+        updateData.conclusion = existing.conclusion;
+      }
+      if (existing.completedAt && !updateData.completedAt) {
+        updateData.completedAt = existing.completedAt;
+      }
+      if (existing.duration != null && updateData.duration == null) {
+        updateData.duration = existing.duration;
+      }
+    }
+  }
+
+  return this.findOneAndUpdate(filter, updateData, {
+    upsert: true,
+    new: true,
+    setDefaultsOnInsert: true,
+  });
+};
 
 const PipelineRun = mongoose.model('PipelineRun', pipelineRunSchema);
 export default PipelineRun;

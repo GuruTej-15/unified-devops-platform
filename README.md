@@ -21,7 +21,7 @@ Commit ("PAY-101: Add payment validation")
    ↓
 Pull Request (PR #42)
    ↓
-CI Pipeline   (PLANNED — Phase 2)
+CI Pipeline (GitHub Actions / BullMQ) ─── [Phase 2A/2B — IMPLEMENTED]
    ↓
 Security Gate (PLANNED — Phase 3)
    ↓
@@ -32,57 +32,33 @@ Deployment    (PLANNED — Phase 4)
 
 ## Implementation Status by Phase
 
-### [IMPLEMENTED] Phase 1 Core Foundation
+### [COMPLETE] Phase 1 Core Foundation
+- **Authentication & RBAC**: JWT with `HttpOnly SameSite=Strict` cookies, password hashing with `bcryptjs` (12 rounds), project-scoped roles (`owner`, `admin`, `developer`, `viewer`).
+- **Sequential Issue Tracking**: Atomically sequenced issue keys starting at 100 (`PAY-101`, `PAY-102`).
+- **GitHub VCS Integration**: Repository connection with AES-256-GCM encrypted PAT at rest, GraphQL commit/PR synchronization.
+- **Traceability Engine**: Multi-step issue key validation linking code changes and PRs to issues.
+- **Unified Delivery State Tracker & Dashboard**: Visual stage progression and real-time project metrics.
+- **Append-Only Audit Logging & Socket.io Gateway**: Real-time project room event broadcasting.
 
-1. **Authentication & Identity**:
-   - `HttpOnly SameSite=Strict` cookie session for browser clients (XSS protection).
-   - Fallback `Authorization: Bearer <token>` support for API / CLI consumers.
-   - Password hashing with `bcryptjs` (12 rounds). Plaintext passwords never stored.
-   - JWT secret configured via environment variables.
+### [COMPLETE] Phase 2A — GitHub Actions CI Pipeline Visibility
+- **HMAC-SHA256 Webhook Gateway**: Verifies `X-Hub-Signature-256` using constant-time comparison.
+- **Idempotent CI Models**: `Pipeline` workflow definitions and `PipelineRun` executions with `{ repository: 1, externalRunId: 1 }` unique indexing.
+- **Issue Traceability in CI**: Multi-step extraction linking workflow runs to issues (`PAY-101`).
+- **Real-Time Delivery State**: Dynamic CI stage in `DeliveryStateTracker.jsx` and dashboard `PipelineSummary.jsx`.
 
-2. **Project Management & Project-Level RBAC**:
-   - Project lifecycle (create, read, update, archive).
-   - Atomic sequential issue counter starting at 100 (`PAY-101`, `PAY-102`).
-   - Project-level authorization: `owner`, `admin`, `developer`, `viewer`. Non-members strictly forbidden (403) from accessing project details, issues, repositories, and project audit records.
-
-3. **Issue Tracking & Discussion**:
-   - Full issue lifecycle (Open, In Progress, In Review, Done, Closed).
-   - Priority levels (Low, Medium, High, Critical) and issue types (Task, Bug, Feature, Improvement).
-   - Discussion stream with real-time Socket.io project room updates.
-
-4. **GitHub VCS Integration**:
-   - Repository connection with validation against GitHub GraphQL v4 API.
-   - Live branch querying, commit synchronization, and pull request synchronization.
-   - Cursor-based pagination and rate limit error handling.
-   - Synchronization failure handling: captures error reasons, maintains `lastSuccessfulSyncAt`, and renders failure states gracefully without crashing.
-
-5. **PAT Security at Rest**:
-   - Personal Access Tokens (PATs) encrypted at rest with **AES-256-GCM** using `ENCRYPTION_KEY`.
-   - PATs are never returned to clients, stored in Redux, logged, exposed in URLs, or serialized in responses. Schema-level transforms and token masking (`••••••••abcd`) ensure zero token leakage.
-
-6. **Traceability Engine**:
-   - Multi-step validation: `Candidate Keys -> Valid Project Namespace -> Existing Issue Record -> Verified Traceability Link`.
-   - Commit messages, PR titles, PR bodies, and branch names linked to project issues. Duplicate sync calls update existing records without creating duplicate entries.
-
-7. **Unified Delivery State Tracker**:
-   - Interactive visual lifecycle component in the issue detail view showing stage progression (Issue -> Branch -> Commit -> Pull Request -> CI/CD -> Security -> Deploy).
-
-8. **Engineering Dashboard**:
-   - Aggregated metrics, delivery status breakdown charts powered by Recharts, recent commits widget, and recent project activity stream.
-
-9. **Application-Level Append-Only Audit Logging**:
-   - Append-only event stream logging authentication, project updates, membership changes, issue status/assignments, and repository sync operations.
-   - Strict read-only API (no update/delete endpoints). Sensitive credentials and passwords are never included in audit metadata.
-
-10. **In-Process Domain Event Bus & Real-Time Gateway**:
-    - In-process event bus for decoupled domain events, designed for replacement by durable Redis/BullMQ infrastructure in Phase 2.
-    - Socket.io gateway with authenticated project rooms (`project:{projectId}`) enforcing membership authorization.
+### [IMPLEMENTED & TESTED] Phase 2B — Durable CI Event Infrastructure & Reconciliation
+- **Redis + BullMQ Architecture**: Fast webhook intake (HTTP 202) enqueueing durable jobs to the `ci-events` BullMQ queue.
+- **Atomic Delivery Idempotency**: `WebhookDelivery` model with unique `deliveryId` constraint (`X-GitHub-Delivery`) guaranteeing only one job is claimed/enqueued across concurrent delivery races.
+- **Dedicated Worker Process**: Standalone executable `npm run worker:ci` consuming CI jobs with bounded exponential backoff (`CI_JOB_ATTEMPTS`, `CI_JOB_BACKOFF_MS`).
+- **Terminal Status Protection**: Out-of-order `in_progress` or `queued` events cannot regress a terminal `completed` status or overwrite `conclusion`.
+- **Scheduled & On-Demand Reconciliation**: BullMQ repeatable reconciliation scheduler and project-scoped `POST /api/v1/projects/:projectId/cicd/reconcile` endpoint to recover missed runs within a configurable lookback window without overloading GitHub rate limits.
+- **Queue Health & Observability**: Project-scoped `GET /api/v1/projects/:projectId/cicd/queue-health` providing real-time backlog diagnostics (waiting, active, failed, delayed jobs).
+- **Explicit Redis Failure Semantics**: Redis is strictly required in production; in non-Redis development environments, a non-durable fallback is clearly logged.
 
 ---
 
 ### [PLANNED] Future Roadmap
-
-- **Phase 2 — CI/CD Pipeline Visibility**: GitHub Actions & Jenkins webhook ingestion, live build/test status, BullMQ / Redis Streams queue persistence.
+- **Phase 2C — Jenkins Integration**: CI provider abstraction for Jenkins build and test jobs.
 - **Phase 3 — Governance & Security Gates**: Trivy & Snyk vulnerability scan gates, policy approval sign-offs, and cryptographic audit log hash chaining.
 - **Phase 4 — Self-Hosted Deployment & Rollout**: Docker / Kubernetes release deployment tracking, production container packaging, and Cypress E2E automation.
 
@@ -96,16 +72,19 @@ unified-devops-platform/
 ├── server/                   # Express 5 Modular Monolith API
 │   ├── src/
 │   │   ├── modules/
-│   │   │   ├── auth/         # Authentication & token generation
+│   │   │   ├── auth/         # Authentication & JWT management
 │   │   │   ├── users/        # User accounts & directory
 │   │   │   ├── projects/     # Projects, membership RBAC, and counters
 │   │   │   ├── issues/       # Issue tracking & discussion comments
 │   │   │   ├── vcs/          # GitHub GraphQL client & sync engine
+│   │   │   ├── cicd/         # CI/CD pipelines, webhook gateway, BullMQ queue, and worker
+│   │   │   │   └── queue/    # ciQueue.js, ciWorker.js, reconciliation.service.js
 │   │   │   ├── audit/        # Append-only audit logger
 │   │   │   └── notifications/# In-process domain event bus
 │   │   ├── middleware/       # Auth guard, project RBAC, Zod validation, rate limiter
 │   │   ├── shared/           # Crypto (AES-256-GCM), errors, responses, parser
-│   │   └── socket/           # Socket.io gateway with project rooms
+│   │   ├── socket/           # Socket.io gateway with project rooms
+│   │   └── workers/          # Standalone worker processes (ci.worker.js)
 │   └── tests/                # Automated Jest test suites (in-memory MongoDB)
 │
 └── client/                   # React 19 SPA (Vite + Tailwind CSS v4)
@@ -122,13 +101,14 @@ unified-devops-platform/
 
 ### Prerequisites
 
-- **Node.js**: >= 20.0.0 (Node 22 or 24 LTS recommended)
+- **Node.js**: `>= 20.0.0` (Node 22 or 24 LTS recommended)
 - **MongoDB**: Running instance on `mongodb://localhost:27017` (or MongoDB Atlas)
+- **Redis**: Running instance on `redis://localhost:6379` (Required for Phase 2B BullMQ queue & worker)
 
 ### 1. Installation
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/GuruTej-15/unified-devops-platform.git
 cd unified-devops-platform
 npm install
 ```
@@ -141,39 +121,43 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-Generate secure secrets:
-
-```bash
-# Generate 32-byte JWT Secret:
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-
-# Generate 32-byte (64 hex characters) AES-256-GCM Encryption Key:
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
 Configure `.env`:
 
 ```env
 NODE_ENV=development
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/unified-devops
-JWT_SECRET=<your-64-character-jwt-secret>
+JWT_SECRET=replace-with-a-strong-random-secret-min-32-chars
 JWT_EXPIRES_IN=24h
-ENCRYPTION_KEY=<your-64-character-hex-encryption-key>
+ENCRYPTION_KEY=replace-with-a-64-char-hex-string-representing-32-bytes
 CORS_ORIGIN=http://localhost:5173
+
+# GitHub Webhook Secret
+GITHUB_WEBHOOK_SECRET=your-github-webhook-secret-here
+
+# Redis & BullMQ Queue Settings
+REDIS_URL=redis://localhost:6379
+CI_QUEUE_NAME=ci-events
+CI_WORKER_CONCURRENCY=5
+CI_JOB_ATTEMPTS=5
+CI_JOB_BACKOFF_MS=2000
+CI_RECONCILIATION_LOOKBACK_MINUTES=60
+CI_RECONCILIATION_INTERVAL_MINUTES=15
 ```
 
 ### 3. Run Development Servers
 
-```bash
-npm run dev
-```
-
-Or run services individually:
+In production and local environments, run the API server, CI background worker, and frontend SPA:
 
 ```bash
-npm run dev:server    # Backend API on port 5000
-npm run dev:client    # Frontend SPA on port 5173
+# Terminal 1: Backend API Server
+npm run dev:server
+
+# Terminal 2: CI Background Worker (BullMQ + Redis)
+npm run worker:ci
+
+# Terminal 3: Frontend Client SPA (Vite)
+npm run dev:client
 ```
 
 Open `http://localhost:5173` in your browser.
@@ -183,7 +167,7 @@ Open `http://localhost:5173` in your browser.
 ## Testing & Quality Assurance
 
 ```bash
-# Run automated backend test suites (in-memory MongoDB)
+# Run all automated backend test suites (37 tests across 5 suites)
 npm test
 
 # Run Vite frontend production bundle build
@@ -195,17 +179,3 @@ npm run lint
 # Run Prettier code formatting check
 npm run format:check
 ```
-
----
-
-## End-to-End Verification Flow
-
-1. **Register & Authenticate**: Create an account at `/register` -> automatically sets `HttpOnly` cookie.
-2. **Create Project**: Create "Payment Service" with key `PAY` -> `ProjectCounter` initialized.
-3. **Manage Members**: Add team members with roles (`developer`, `viewer`, `admin`).
-4. **Create Issues**: Create tasks -> sequentially assigned `PAY-101`, `PAY-102`.
-5. **Connect GitHub Repository**: Provide repo name and GitHub PAT -> PAT encrypted via AES-256-GCM at rest.
-6. **Sync Repository**: Sync commits and PRs -> candidate issue keys matched against verified project issues.
-7. **Trace Delivery**: Open issue `PAY-101` -> `DeliveryStateTracker` displays associated branch, commits, PRs, and future phase gates.
-8. **Inspect Dashboard**: View real-time KPIs, Recharts delivery distribution chart, and commit streams.
-9. **Review Audit Trail**: Open `/audit-logs` -> inspect append-only event stream.
