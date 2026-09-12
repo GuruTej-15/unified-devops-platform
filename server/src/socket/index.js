@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
 import ProjectMember from '../modules/projects/projectMember.model.js';
 import eventBus from '../modules/notifications/eventBus.js';
+import { initPipelineEventSubscriber } from '../modules/cicd/events/ciEventBridge.js';
 import logger from '../shared/logger.js';
 
 let io = null;
@@ -94,6 +95,9 @@ export function initSocket(httpServer) {
   // Wire domain events to Socket.io broadcasts
   setupEventBroadcasts();
 
+  // Initialize cross-process Redis Pub/Sub subscriber for CI/CD events
+  initPipelineEventSubscriber(io);
+
   logger.info('Socket.io initialized');
   return io;
 }
@@ -125,7 +129,8 @@ function setupEventBroadcasts() {
 
   for (const event of projectEvents) {
     eventBus.on(event, (payload) => {
-      if (!io) return;
+      // Discard if Socket.io uninitialized or if event originated from Redis (already broadcasted)
+      if (!io || payload?.fromRedis) return;
 
       // Determine project ID from payload
       const projectId =

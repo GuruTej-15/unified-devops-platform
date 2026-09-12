@@ -10,7 +10,7 @@ import WebhookDelivery from '../webhookDelivery.model.js';
 import WebhookService from '../webhook.service.js';
 import ReconciliationService from '../reconciliation.service.js';
 import { extractIssueKeys } from '../../../shared/issueKeyParser.js';
-import eventBus from '../../notifications/eventBus.js';
+import { publishPipelineEvent } from '../events/ciEventBridge.js';
 import logger from '../../../shared/logger.js';
 
 /**
@@ -163,22 +163,22 @@ export async function processWebhookJob({ deliveryId, event, payload }) {
       }
     );
 
-    // 9. Emit domain events
-    eventBus.emit('pipeline.run.received', {
+    // 9. Emit domain events across processes via Redis Pub/Sub bridge
+    await publishPipelineEvent('pipeline.run.received', {
       pipelineRun,
       project: project._id,
       repository: repository._id,
     });
 
     if (pipelineRun.status === 'completed') {
-      eventBus.emit('pipeline.run.completed', {
+      await publishPipelineEvent('pipeline.run.completed', {
         pipelineRun,
         project: project._id,
         repository: repository._id,
       });
     }
 
-    eventBus.emit('pipeline.updated', {
+    await publishPipelineEvent('pipeline.updated', {
       pipelineRun,
       project: project._id,
     });

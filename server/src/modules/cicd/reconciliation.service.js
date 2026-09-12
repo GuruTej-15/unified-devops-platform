@@ -8,6 +8,7 @@ import WebhookService from './webhook.service.js';
 import { decrypt } from '../../shared/crypto.js';
 import { NotFoundError } from '../../shared/errors.js';
 import eventBus from '../notifications/eventBus.js';
+import { publishPipelineEvent } from './events/ciEventBridge.js';
 import logger from '../../shared/logger.js';
 
 export default class ReconciliationService {
@@ -142,10 +143,14 @@ export default class ReconciliationService {
       stats,
     });
 
-    eventBus.emit('pipeline.updated', {
-      project: project._id,
-      stats,
-    });
+    // Only emit and publish cross-process pipeline.updated when runs were created or updated
+    if (stats.runsCreated > 0 || stats.runsUpdated > 0) {
+      await publishPipelineEvent('pipeline.updated', {
+        project: project._id,
+        repository: repo,
+        stats,
+      });
+    }
 
     logger.info(
       `Reconciled repository ${repo.fullName}: ${stats.runsSynced} synced (${stats.runsCreated} created, ${stats.runsUpdated} updated)`

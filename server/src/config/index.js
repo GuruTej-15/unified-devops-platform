@@ -46,6 +46,7 @@ const config = {
       parseInt(process.env.CI_RECONCILIATION_LOOKBACK_MINUTES, 10) || 60,
     reconciliationIntervalMinutes:
       parseInt(process.env.CI_RECONCILIATION_INTERVAL_MINUTES, 10) || 15,
+    eventChannel: process.env.CI_EVENT_CHANNEL || 'cicd:pipeline-events',
   },
 };
 
