@@ -18,6 +18,16 @@ const webhookDeliverySchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    provider: {
+      type: String,
+      enum: ['github_actions', 'jenkins'],
+      default: 'github_actions',
+    },
+    jenkinsIntegration: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JenkinsIntegration',
+      default: null,
+    },
     externalRepoId: {
       type: String,
       default: '',
@@ -76,16 +86,20 @@ webhookDeliverySchema.statics.claimDelivery = async function ({
   deliveryId,
   event,
   action,
-  externalRepoId,
+  externalRepoId = '',
   repositoryId = null,
   projectId = null,
   payloadDigest = '',
+  provider = 'github_actions',
+  jenkinsIntegrationId = null,
 }) {
   try {
     const delivery = await this.create({
       deliveryId,
       event,
       action,
+      provider,
+      jenkinsIntegration: jenkinsIntegrationId,
       externalRepoId,
       repository: repositoryId,
       project: projectId,
