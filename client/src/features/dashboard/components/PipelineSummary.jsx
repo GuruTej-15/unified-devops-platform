@@ -129,7 +129,18 @@ export default function PipelineSummary({ pipelineStats = {}, recentPipelineRuns
                     )}
                   </div>
 
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">{run.workflowName}</p>
+                  <div className="flex items-center space-x-2 mt-0.5">
+                    <span className="text-xs text-gray-500 truncate">{run.workflowName}</span>
+                    {run.provider === 'jenkins' ? (
+                      <span className="inline-flex items-center px-1.5 py-0.2 text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                        Jenkins
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-1.5 py-0.2 text-[9px] font-medium bg-gray-100 text-gray-600 border border-gray-200 rounded">
+                        GH Actions
+                      </span>
+                    )}
+                  </div>
 
                   <div className="flex items-center mt-1 text-[11px] text-gray-400 space-x-3">
                     {run.duration != null && <span>{formatDuration(run.duration)}</span>}

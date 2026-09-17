@@ -8,6 +8,12 @@ import WebhookService from './webhook.service.js';
 import { decrypt } from '../../shared/crypto.js';
 import { NotFoundError } from '../../shared/errors.js';
 import eventBus from '../notifications/eventBus.js';
+import JenkinsIntegration from './jenkinsIntegration.model.js';
+import JenkinsClient from './providers/jenkinsClient.js';
+import { getCiProvider } from './providers/providerRegistry.js';
+import { CI_PROVIDER } from '../../shared/constants.js';
+import { publishPipelineEvent } from './events/ciEventBridge.js';
+import { extractIssueKeys } from '../../shared/issueKeyParser.js';
 import logger from '../../shared/logger.js';
 
 export default class ReconciliationService {
@@ -122,7 +128,12 @@ export default class ReconciliationService {
 
       // 6. Idempotent upsert with status protection
       const result = await PipelineRun.upsertWithStatusGuard(
-        { repository: repo._id, externalRunId: String(run.id) },
+        {
+          repository: repo._id,
+          provider: 'github_actions',
+          jenkinsIntegration: null,
+          externalRunId: String(run.id),
+        },
         runData
       );
 
@@ -142,10 +153,14 @@ export default class ReconciliationService {
       stats,
     });
 
-    eventBus.emit('pipeline.updated', {
-      project: project._id,
-      stats,
-    });
+    // Only emit and publish cross-process pipeline.updated when runs were created or updated
+    if (stats.runsCreated > 0 || stats.runsUpdated > 0) {
+      await publishPipelineEvent('pipeline.updated', {
+        project: project._id,
+        repository: repo,
+        stats,
+      });
+    }
 
     logger.info(
       `Reconciled repository ${repo.fullName}: ${stats.runsSynced} synced (${stats.runsCreated} created, ${stats.runsUpdated} updated)`
@@ -155,12 +170,160 @@ export default class ReconciliationService {
   }
 
   /**
-   * Reconcile all connected repositories for a project.
+   * Reconcile a single Jenkins integration against the Jenkins REST API.
+   */
+  static async reconcileJenkinsIntegration(
+    integrationId,
+    { lookbackMinutes = 60, actorId: _actorId = null } = {}
+  ) {
+    const integration = await JenkinsIntegration.findById(integrationId).select(
+      '+encryptedApiToken +apiTokenIv +apiTokenAuthTag'
+    );
+    if (!integration || !integration.isActive) {
+      return { runsSynced: 0, runsCreated: 0, runsUpdated: 0 };
+    }
+
+    const project = await Project.findById(integration.project);
+    const repo = await Repository.findById(integration.repository);
+    if (!project || !repo) {
+      return { runsSynced: 0, runsCreated: 0, runsUpdated: 0 };
+    }
+
+    let apiToken = '';
+    if (integration.encryptedApiToken) {
+      try {
+        apiToken = decrypt({
+          ciphertext: integration.encryptedApiToken,
+          iv: integration.apiTokenIv,
+          authTag: integration.apiTokenAuthTag,
+        });
+      } catch (err) {
+        logger.warn(
+          `Failed to decrypt Jenkins API token for integration ${integrationId}: ${err.message}`
+        );
+      }
+    }
+
+    const client = new JenkinsClient({
+      serverUrl: integration.serverUrl,
+      username: integration.username,
+      apiToken,
+    });
+
+    const builds = await client.getBuildRuns(integration.jobName, { limit: 30 });
+    const cutoffTime = lookbackMinutes ? Date.now() - lookbackMinutes * 60 * 1000 : 0;
+    const stats = { runsSynced: 0, runsCreated: 0, runsUpdated: 0 };
+    const jenkinsProvider = getCiProvider(CI_PROVIDER.JENKINS);
+
+    for (const build of builds) {
+      const buildTime = build.timestamp ? new Date(build.timestamp).getTime() : 0;
+      if (cutoffTime && buildTime && buildTime < cutoffTime) {
+        continue;
+      }
+
+      const normalized = await jenkinsProvider.normalizeWebhookPayload(
+        { build, name: integration.jobName },
+        { event: 'reconcile_api', integrationId: integration._id },
+        { integration, repository: repo, project }
+      );
+
+      const pipeline = await Pipeline.findOneAndUpdate(
+        {
+          repository: repo._id,
+          externalWorkflowId: normalized.externalWorkflowId,
+        },
+        {
+          project: project._id,
+          repository: repo._id,
+          provider: 'jenkins',
+          externalWorkflowId: normalized.externalWorkflowId,
+          name: normalized.workflowName,
+          path: 'Jenkinsfile',
+          status: 'active',
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      const combinedText = (normalized.textForIssueKeyExtraction || []).join(' ');
+      const candidateKeys = extractIssueKeys(combinedText);
+      const matchedIssueKeys = await WebhookService._validateIssueKeys(candidateKeys, project);
+
+      const runData = {
+        project: project._id,
+        repository: repo._id,
+        pipeline: pipeline._id,
+        provider: 'jenkins',
+        jenkinsIntegration: integration._id,
+        providerEvent: 'reconcile_api',
+        providerAction: normalized.providerAction || '',
+        webhookDeliveryId: '',
+        webhookReceivedAt: new Date(),
+        externalRunId: normalized.externalRunId,
+        runNumber: normalized.runNumber,
+        workflowName: normalized.workflowName,
+        workflowPath: 'Jenkinsfile',
+        commitSha: normalized.commitSha || '',
+        branch: normalized.branch || '',
+        pullRequestNumber: null,
+        pullRequest: null,
+        matchedIssueKeys,
+        eventType: 'reconcile',
+        status: normalized.status,
+        conclusion: normalized.conclusion,
+        htmlUrl: normalized.htmlUrl || '',
+        startedAt: normalized.startedAt || new Date(),
+        completedAt: normalized.completedAt || null,
+        duration: normalized.duration,
+        actor: normalized.actor || { login: 'jenkins', avatarUrl: '' },
+        headCommitMessage: normalized.headCommitMessage || '',
+      };
+
+      const filter = {
+        repository: repo._id,
+        provider: 'jenkins',
+        jenkinsIntegration: integration._id,
+        externalRunId: normalized.externalRunId,
+      };
+
+      const result = await PipelineRun.upsertWithStatusGuard(filter, runData);
+      stats.runsSynced++;
+      if (result.createdAt.getTime() === result.updatedAt.getTime()) {
+        stats.runsCreated++;
+      } else {
+        stats.runsUpdated++;
+      }
+    }
+
+    if (stats.runsCreated > 0 || stats.runsUpdated > 0) {
+      await publishPipelineEvent('pipeline.updated', {
+        project: project._id,
+        repository: repo,
+        stats,
+      });
+    }
+
+    await JenkinsIntegration.findByIdAndUpdate(integration._id, { lastSyncedAt: new Date() });
+    return stats;
+  }
+
+  /**
+   * Reconcile all connected repositories and Jenkins integrations for a project.
    */
   static async reconcileProject(projectId, { lookbackMinutes = 60, actorId = null } = {}) {
     const repos = await Repository.find({ project: projectId });
-    const aggregateStats = { reposProcessed: 0, runsSynced: 0, runsCreated: 0, runsUpdated: 0 };
+    const jenkinsIntegrations = await JenkinsIntegration.find({
+      project: projectId,
+      isActive: true,
+    });
+    const aggregateStats = {
+      reposProcessed: 0,
+      integrationsProcessed: 0,
+      runsSynced: 0,
+      runsCreated: 0,
+      runsUpdated: 0,
+    };
 
+    // 1. Reconcile GitHub repositories
     for (const repo of repos) {
       try {
         const stats = await this.reconcileRepository(repo._id, { lookbackMinutes, actorId });
@@ -173,6 +336,22 @@ export default class ReconciliationService {
       }
     }
 
+    // 2. Reconcile Jenkins integrations
+    for (const integration of jenkinsIntegrations) {
+      try {
+        const stats = await this.reconcileJenkinsIntegration(integration._id, {
+          lookbackMinutes,
+          actorId,
+        });
+        aggregateStats.integrationsProcessed++;
+        aggregateStats.runsSynced += stats.runsSynced;
+        aggregateStats.runsCreated += stats.runsCreated;
+        aggregateStats.runsUpdated += stats.runsUpdated;
+      } catch (err) {
+        logger.error(`Error reconciling Jenkins job ${integration.jobName}: ${err.message}`);
+      }
+    }
+
     return aggregateStats;
   }
 
@@ -181,8 +360,9 @@ export default class ReconciliationService {
    */
   static async reconcileAllConnectedRepositories({ lookbackMinutes = 60 } = {}) {
     const repos = await Repository.find({});
+    const jenkinsIntegrations = await JenkinsIntegration.find({ isActive: true });
     logger.info(
-      `Starting scheduled CI reconciliation across ${repos.length} connected repositories`
+      `Starting scheduled CI reconciliation across ${repos.length} repos and ${jenkinsIntegrations.length} Jenkins jobs`
     );
 
     let totalSynced = 0;
@@ -195,9 +375,20 @@ export default class ReconciliationService {
       }
     }
 
+    for (const integration of jenkinsIntegrations) {
+      try {
+        const stats = await this.reconcileJenkinsIntegration(integration._id, { lookbackMinutes });
+        totalSynced += stats.runsSynced;
+      } catch (err) {
+        logger.warn(
+          `Scheduled reconciliation skipped for Jenkins job ${integration.jobName}: ${err.message}`
+        );
+      }
+    }
+
     logger.info(
-      `Completed scheduled CI reconciliation: ${totalSynced} runs processed across ${repos.length} repos`
+      `Completed scheduled CI reconciliation: ${totalSynced} runs processed across ${repos.length} repos and ${jenkinsIntegrations.length} Jenkins jobs`
     );
-    return { totalRepos: repos.length, totalSynced };
+    return { totalRepos: repos.length, totalJenkinsJobs: jenkinsIntegrations.length, totalSynced };
   }
 }

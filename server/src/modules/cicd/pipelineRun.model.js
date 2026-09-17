@@ -35,6 +35,11 @@ const pipelineRunSchema = new mongoose.Schema(
       default: CI_PROVIDER.GITHUB_ACTIONS,
       required: true,
     },
+    jenkinsIntegration: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JenkinsIntegration',
+      default: null,
+    },
     providerEvent: {
       type: String,
       default: 'workflow_run',
@@ -75,7 +80,8 @@ const pipelineRunSchema = new mongoose.Schema(
     },
     commitSha: {
       type: String,
-      required: true,
+      required: false,
+      default: '',
       trim: true,
     },
     branch: {
@@ -137,7 +143,11 @@ const pipelineRunSchema = new mongoose.Schema(
   }
 );
 
-pipelineRunSchema.index({ repository: 1, externalRunId: 1 }, { unique: true });
+pipelineRunSchema.index(
+  { repository: 1, provider: 1, jenkinsIntegration: 1, externalRunId: 1 },
+  { unique: true }
+);
+pipelineRunSchema.index({ jenkinsIntegration: 1 });
 pipelineRunSchema.index({ project: 1, createdAt: -1 });
 pipelineRunSchema.index({ commitSha: 1 });
 pipelineRunSchema.index({ matchedIssueKeys: 1 });

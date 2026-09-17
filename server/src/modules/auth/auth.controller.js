@@ -6,7 +6,7 @@ const COOKIE_OPTIONS = (env) => ({
   httpOnly: true,
   secure: env === 'production',
   sameSite: 'strict',
-  path: '/api/v1',
+  path: '/',
   maxAge: 24 * 60 * 60 * 1000,
 });
 
@@ -32,7 +32,7 @@ class AuthController {
       httpOnly: true,
       secure: config.env === 'production',
       sameSite: 'strict',
-      path: '/api/v1',
+      path: '/',
       maxAge: 0,
     });
     sendSuccess(res, { message: 'Logged out successfully' });

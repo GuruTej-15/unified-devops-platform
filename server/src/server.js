@@ -3,6 +3,7 @@ import config from './config/index.js';
 import connectDB from './config/database.js';
 import app from './app.js';
 import { initSocket } from './socket/index.js';
+import { closePipelineEventSubscriber } from './modules/cicd/events/ciEventBridge.js';
 import logger from './shared/logger.js';
 
 const startServer = async () => {
@@ -24,6 +25,7 @@ const startServer = async () => {
   // Graceful shutdown
   const shutdown = async (signal) => {
     logger.info(`${signal} received. Shutting down gracefully...`);
+    await closePipelineEventSubscriber();
     server.close(() => {
       logger.info('HTTP server closed');
       process.exit(0);

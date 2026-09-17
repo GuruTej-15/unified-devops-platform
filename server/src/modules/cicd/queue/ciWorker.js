@@ -10,14 +10,28 @@ import WebhookDelivery from '../webhookDelivery.model.js';
 import WebhookService from '../webhook.service.js';
 import ReconciliationService from '../reconciliation.service.js';
 import { extractIssueKeys } from '../../../shared/issueKeyParser.js';
-import eventBus from '../../notifications/eventBus.js';
+import { publishPipelineEvent } from '../events/ciEventBridge.js';
+import JenkinsIntegration from '../jenkinsIntegration.model.js';
+import JenkinsClient from '../providers/jenkinsClient.js';
+import { getCiProvider } from '../providers/providerRegistry.js';
+import { decrypt } from '../../../shared/crypto.js';
+import { CI_PROVIDER } from '../../../shared/constants.js';
 import logger from '../../../shared/logger.js';
 
 /**
  * Worker handler to process an individual CI webhook job.
  */
-export async function processWebhookJob({ deliveryId, event, payload }) {
-  if (event !== 'workflow_run') {
+export async function processWebhookJob({
+  provider: jobProvider,
+  deliveryId,
+  integrationId,
+  event,
+  payload,
+}) {
+  const providerName = jobProvider || 'github_actions';
+  const providerAdapter = getCiProvider(providerName);
+
+  if (providerName === 'github_actions' && event !== 'workflow_run') {
     logger.info(`Worker skipping unhandled event type '${event}' for delivery ${deliveryId}`);
     await WebhookDelivery.findOneAndUpdate(
       { deliveryId },
@@ -26,165 +40,232 @@ export async function processWebhookJob({ deliveryId, event, payload }) {
     return { ignored: true, reason: `Unhandled event '${event}'` };
   }
 
-  const { workflow_run: run, repository: repoPayload, action } = payload;
-  if (!run || !repoPayload) {
+  if (!payload || typeof payload !== 'object') {
     await WebhookDelivery.findOneAndUpdate(
       { deliveryId },
       {
         status: 'failed',
-        errorMessage: 'Malformed workflow_run webhook payload',
+        errorMessage: 'Malformed webhook payload',
         processedAt: new Date(),
       }
     );
-    throw new UnrecoverableError('Malformed workflow_run webhook payload');
+    throw new UnrecoverableError('Malformed webhook payload');
   }
 
   try {
-    // 1. Resolve Platform Repository
-    const repository = await Repository.findOne({ externalId: String(repoPayload.id) });
-    if (!repository) {
-      logger.info(
-        `Worker: Repository ${repoPayload.full_name} (ID: ${repoPayload.id}) not connected. Ignoring.`
-      );
-      await WebhookDelivery.findOneAndUpdate(
-        { deliveryId },
-        { status: 'ignored', errorMessage: 'Repository not connected', processedAt: new Date() }
-      );
-      return { ignored: true, reason: 'Repository not connected' };
+    let integration = null;
+    let repository = null;
+    let project = null;
+
+    if (providerName === CI_PROVIDER.JENKINS) {
+      if (integrationId) {
+        integration = await JenkinsIntegration.findById(integrationId).select(
+          '+encryptedApiToken +apiTokenIv +apiTokenAuthTag'
+        );
+      }
+      if (!integration) {
+        logger.warn(
+          `Worker: Jenkins integration ${integrationId} not found for delivery ${deliveryId}`
+        );
+        await WebhookDelivery.findOneAndUpdate(
+          { deliveryId },
+          {
+            status: 'ignored',
+            errorMessage: 'Jenkins integration not found',
+            processedAt: new Date(),
+          }
+        );
+        return { ignored: true, reason: 'Jenkins integration not found' };
+      }
+      repository = await Repository.findById(integration.repository);
+      project = await Project.findById(integration.project);
+    } else {
+      // Default / GitHub Actions
+      const repoExternalId = String(payload.repository?.id || '');
+      repository = await Repository.findOne({ externalId: repoExternalId });
+      if (!repository) {
+        logger.info(
+          `Worker: Repository ${payload.repository?.full_name} (ID: ${payload.repository?.id}) not connected. Ignoring.`
+        );
+        await WebhookDelivery.findOneAndUpdate(
+          { deliveryId },
+          { status: 'ignored', errorMessage: 'Repository not connected', processedAt: new Date() }
+        );
+        return { ignored: true, reason: 'Repository not connected' };
+      }
+      project = await Project.findById(repository.project);
     }
 
-    // 2. Resolve Project
-    const project = await Project.findById(repository.project);
-    if (!project) {
-      logger.warn(`Worker: Associated project not found for repository ID ${repository._id}`);
+    if (!project || !repository) {
+      logger.warn(`Worker: Associated project or repository not found for delivery ${deliveryId}`);
       await WebhookDelivery.findOneAndUpdate(
         { deliveryId },
-        { status: 'ignored', errorMessage: 'Associated project not found', processedAt: new Date() }
+        {
+          status: 'ignored',
+          errorMessage: 'Project or repository not found',
+          processedAt: new Date(),
+        }
       );
-      return { ignored: true, reason: 'Project not found' };
+      return { ignored: true, reason: 'Project or repository not found' };
     }
 
-    // 3. Find or create Pipeline definition
+    // 1. Normalize webhook payload via provider adapter
+    const normalized = await providerAdapter.normalizeWebhookPayload(
+      payload,
+      { deliveryId, event, integrationId },
+      { integration, repository, project }
+    );
+
+    // 2. Optional REST enrichment for Jenkins if commitSha or duration is missing and API token available
+    if (
+      providerName === CI_PROVIDER.JENKINS &&
+      integration &&
+      integration.username &&
+      integration.encryptedApiToken &&
+      (!normalized.commitSha || normalized.duration == null)
+    ) {
+      try {
+        const apiToken = decrypt({
+          ciphertext: integration.encryptedApiToken,
+          iv: integration.apiTokenIv,
+          authTag: integration.apiTokenAuthTag,
+        });
+        const client = new JenkinsClient({
+          serverUrl: integration.serverUrl,
+          username: integration.username,
+          apiToken,
+        });
+        const details = await client.getBuildDetails(integration.jobName, normalized.runNumber);
+        if (!normalized.commitSha && details.changeSets) {
+          for (const cs of details.changeSets) {
+            if (cs.items?.[0]?.commitId) {
+              normalized.commitSha = cs.items[0].commitId;
+              break;
+            }
+          }
+        }
+        if (
+          normalized.duration == null &&
+          typeof details.duration === 'number' &&
+          details.duration > 0
+        ) {
+          normalized.duration = Math.round(
+            details.duration > 1000 ? details.duration / 1000 : details.duration
+          );
+        }
+      } catch (enrichErr) {
+        logger.debug(`Worker: Jenkins REST enrichment skipped: ${enrichErr.message}`);
+      }
+    }
+
+    // 3. Upsert Pipeline Workflow definition
     const pipeline = await Pipeline.findOneAndUpdate(
       {
         repository: repository._id,
-        externalWorkflowId: String(run.workflow_id),
+        externalWorkflowId: normalized.externalWorkflowId,
       },
       {
         project: project._id,
         repository: repository._id,
-        provider: 'github_actions',
-        externalWorkflowId: String(run.workflow_id),
-        name: run.name || 'CI Workflow',
-        path: run.path || '',
+        provider: providerName,
+        externalWorkflowId: normalized.externalWorkflowId,
+        name: normalized.workflowName,
+        path: normalized.workflowPath || '',
         status: 'active',
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
     // 4. Multi-step Issue Traceability Extraction
-    const textSources = [run.head_commit?.message || '', run.head_branch || ''];
-    if (Array.isArray(run.pull_requests)) {
-      for (const pr of run.pull_requests) {
-        if (pr.head?.ref) textSources.push(pr.head.ref);
-        if (pr.title) textSources.push(pr.title);
-      }
-    }
-    const combinedText = textSources.join(' ');
+    const combinedText = (normalized.textForIssueKeyExtraction || []).join(' ');
     const candidateKeys = extractIssueKeys(combinedText);
     const matchedIssueKeys = await WebhookService._validateIssueKeys(candidateKeys, project);
 
-    // 5. Calculate Duration
-    let duration = null;
-    if (run.run_started_at && run.updated_at && run.status === 'completed') {
-      const start = new Date(run.run_started_at).getTime();
-      const end = new Date(run.updated_at).getTime();
-      if (!isNaN(start) && !isNaN(end) && end >= start) {
-        duration = Math.round((end - start) / 1000);
-      }
-    }
-
-    // 6. Resolve Associated PR
+    // 5. Resolve Associated PR if number present
     let associatedPr = null;
-    const prNumber = run.pull_requests?.[0]?.number || null;
-    if (prNumber) {
+    if (normalized.pullRequestNumber) {
       associatedPr = await PullRequest.findOne({
         repository: repository._id,
-        number: prNumber,
+        number: normalized.pullRequestNumber,
       });
     }
 
-    // 7. Atomic Idempotent Upsert with Status Protection Guard
+    // 6. Build normalized PipelineRun data
     const runData = {
       project: project._id,
       repository: repository._id,
       pipeline: pipeline._id,
-      provider: 'github_actions',
-      providerEvent: event,
-      providerAction: action || run.status,
+      provider: providerName,
+      jenkinsIntegration: normalized.jenkinsIntegration || null,
+      providerEvent: normalized.providerEvent || event,
+      providerAction: normalized.providerAction || '',
       webhookDeliveryId: deliveryId || '',
       webhookReceivedAt: new Date(),
-      externalRunId: String(run.id),
-      runNumber: run.run_number || 1,
-      workflowName: run.name || pipeline.name,
-      workflowPath: run.path || pipeline.path,
-      commitSha: run.head_sha || '',
-      branch: run.head_branch || '',
-      pullRequestNumber: prNumber,
+      externalRunId: normalized.externalRunId,
+      runNumber: normalized.runNumber,
+      workflowName: normalized.workflowName,
+      workflowPath: normalized.workflowPath || '',
+      commitSha: normalized.commitSha || '',
+      branch: normalized.branch || '',
+      pullRequestNumber: normalized.pullRequestNumber || null,
       pullRequest: associatedPr?._id || null,
       matchedIssueKeys,
-      eventType: run.event || 'push',
-      status: run.status || 'queued',
-      conclusion: run.conclusion || null,
-      htmlUrl: run.html_url || '',
-      startedAt: run.run_started_at ? new Date(run.run_started_at) : new Date(),
-      completedAt: run.status === 'completed' && run.updated_at ? new Date(run.updated_at) : null,
-      duration,
-      actor: {
-        login: run.actor?.login || 'github-actions',
-        avatarUrl: run.actor?.avatar_url || '',
-      },
-      headCommitMessage: run.head_commit?.message || '',
+      eventType: normalized.eventType || 'push',
+      status: normalized.status,
+      conclusion: normalized.conclusion,
+      htmlUrl: normalized.htmlUrl || '',
+      startedAt: normalized.startedAt || new Date(),
+      completedAt: normalized.completedAt || null,
+      duration: normalized.duration,
+      actor: normalized.actor || { login: providerName, avatarUrl: '' },
+      headCommitMessage: normalized.headCommitMessage || '',
     };
 
-    const pipelineRun = await PipelineRun.upsertWithStatusGuard(
-      { repository: repository._id, externalRunId: String(run.id) },
-      runData
-    );
+    // 7. Atomic Idempotent Upsert with Status Protection Guard
+    const filter = {
+      repository: repository._id,
+      provider: providerName,
+      jenkinsIntegration: normalized.jenkinsIntegration || null,
+      externalRunId: normalized.externalRunId,
+    };
+
+    const pipelineRun = await PipelineRun.upsertWithStatusGuard(filter, runData);
 
     // 8. Mark WebhookDelivery as processed
     await WebhookDelivery.findOneAndUpdate(
       { deliveryId },
       {
         status: 'processed',
+        provider: providerName,
+        jenkinsIntegration: normalized.jenkinsIntegration || null,
         repository: repository._id,
         project: project._id,
         processedAt: new Date(),
       }
     );
 
-    // 9. Emit domain events
-    eventBus.emit('pipeline.run.received', {
+    // 9. Emit domain events across processes via Redis Pub/Sub bridge
+    await publishPipelineEvent('pipeline.run.received', {
       pipelineRun,
       project: project._id,
       repository: repository._id,
     });
 
     if (pipelineRun.status === 'completed') {
-      eventBus.emit('pipeline.run.completed', {
+      await publishPipelineEvent('pipeline.run.completed', {
         pipelineRun,
         project: project._id,
         repository: repository._id,
       });
     }
 
-    eventBus.emit('pipeline.updated', {
+    await publishPipelineEvent('pipeline.updated', {
       pipelineRun,
       project: project._id,
     });
 
     logger.info(
-      `Worker processed PipelineRun #${pipelineRun.runNumber} (${pipelineRun.workflowName}, status: ${pipelineRun.status}, conclusion: ${pipelineRun.conclusion}) for delivery ${deliveryId}`
+      `Worker processed PipelineRun #${pipelineRun.runNumber} (${pipelineRun.workflowName}, provider: ${pipelineRun.provider}, status: ${pipelineRun.status}, conclusion: ${pipelineRun.conclusion}) for delivery ${deliveryId}`
     );
 
     return {

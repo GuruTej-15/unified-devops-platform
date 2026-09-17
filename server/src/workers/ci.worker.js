@@ -2,6 +2,7 @@ import connectDB from '../config/database.js';
 import { connectRedis } from '../config/redis.js';
 import { initCiWorker } from '../modules/cicd/queue/ciWorker.js';
 import { scheduleRepeatableReconciliation } from '../modules/cicd/queue/ciQueue.js';
+import { closePipelineEventPublisher } from '../modules/cicd/events/ciEventBridge.js';
 import logger from '../shared/logger.js';
 
 logger.info('====================================================');
@@ -29,6 +30,7 @@ async function startWorkerProcess() {
       logger.info(`Received ${signal}. Gracefully stopping CI worker...`);
       try {
         await worker.close();
+        await closePipelineEventPublisher();
         logger.info('CI Worker stopped cleanly.');
         process.exit(0);
       } catch (err) {

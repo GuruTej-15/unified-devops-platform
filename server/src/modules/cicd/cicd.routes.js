@@ -40,4 +40,19 @@ router.post(
 // Queue health & observability diagnostics (Phase 2B)
 router.get('/cicd/queue-health', authenticate, projectAccess(), controller.getQueueHealthStatus);
 
+// Jenkins integrations (Phase 2C)
+router.post(
+  '/cicd/jenkins',
+  authenticate,
+  projectAccess('owner', 'admin'),
+  controller.createJenkinsIntegration
+);
+router.get('/cicd/jenkins', authenticate, projectAccess(), controller.listJenkinsIntegrations);
+router.delete(
+  '/cicd/jenkins/:integrationId',
+  authenticate,
+  projectAccess('owner', 'admin'),
+  controller.deleteJenkinsIntegration
+);
+
 export default router;

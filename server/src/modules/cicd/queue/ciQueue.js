@@ -46,21 +46,30 @@ export function getCiQueue() {
 /**
  * Enqueue a GitHub webhook event for asynchronous, durable worker execution.
  */
-export async function enqueueWebhookEvent({ deliveryId, event, payload }) {
+export async function enqueueWebhookEvent({
+  deliveryId,
+  event,
+  payload,
+  provider = 'github_actions',
+  integrationId = null,
+}) {
   const queue = getCiQueue();
 
   if (queue) {
     try {
+      const sanitizedJobId = deliveryId ? String(deliveryId).replace(/[:]/g, '-') : undefined;
       const job = await queue.add(
         'webhook_event',
         {
+          provider,
           deliveryId,
+          integrationId,
           event,
           payload,
           enqueuedAt: new Date().toISOString(),
         },
         {
-          jobId: deliveryId, // Deduplicate at BullMQ level
+          jobId: sanitizedJobId, // Deduplicate at BullMQ level (BullMQ forbids colons in custom IDs)
         }
       );
 
@@ -84,7 +93,13 @@ export async function enqueueWebhookEvent({ deliveryId, event, payload }) {
 
   // Lazy import processor to avoid circular dependency
   const { processWebhookJob } = await import('./ciWorker.js');
-  const result = await processWebhookJob({ deliveryId, event, payload });
+  const result = await processWebhookJob({
+    provider,
+    deliveryId,
+    integrationId,
+    event,
+    payload,
+  });
   return { enqueued: false, fallbackExecuted: true, result };
 }
 
