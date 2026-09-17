@@ -16,6 +16,7 @@ import vcsRoutes from './modules/vcs/vcs.routes.js';
 import cicdRoutes from './modules/cicd/cicd.routes.js';
 import webhookRoutes from './modules/cicd/webhook.routes.js';
 import auditRoutes from './modules/audit/audit.routes.js';
+import securityRoutes from './modules/security/security.routes.js';
 
 const app = express();
 
@@ -32,6 +33,8 @@ app.use(
       'X-Hub-Signature-256',
       'X-GitHub-Delivery',
       'X-GitHub-Event',
+      'X-Jenkins-Token',
+      'X-Security-Token',
     ],
   })
 );
@@ -77,6 +80,7 @@ app.use('/api/v1/webhooks', webhookRoutes);
 // Nested under projects
 app.use('/api/v1/projects/:projectId/issues', issueRoutes);
 app.use('/api/v1/projects/:projectId/repositories', vcsRoutes);
+app.use('/api/v1/projects/:projectId/security', securityRoutes);
 app.use('/api/v1/projects/:projectId', cicdRoutes);
 
 // --- 404 handler ---
