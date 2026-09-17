@@ -1,0 +1,20 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "clean-service:1.0.0",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": {
+      "Family": "alpine",
+      "Name": "3.18.4"
+    },
+    "ImageID": "sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff"
+  },
+  "Results": [
+    {
+      "Target": "clean-service:1.0.0 (alpine 3.18.4)",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "Vulnerabilities": []
+    }
+  ]
+}
