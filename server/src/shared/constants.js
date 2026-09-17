@@ -107,6 +107,83 @@ export const PIPELINE_CONCLUSION = {
 
 export const PIPELINE_CONCLUSION_VALUES = Object.values(PIPELINE_CONCLUSION);
 
+// Security Enums (Phase 3)
+export const SECURITY_PROVIDER = {
+  TRIVY: 'trivy',
+  GENERIC: 'generic',
+};
+
+export const SECURITY_PROVIDER_VALUES = Object.values(SECURITY_PROVIDER);
+
+export const SECURITY_SCAN_STATUS = {
+  PENDING: 'pending',
+  PROCESSING: 'processing',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+};
+
+export const SECURITY_SCAN_STATUS_VALUES = Object.values(SECURITY_SCAN_STATUS);
+
+export const SECURITY_SCAN_TYPE = {
+  IMAGE: 'image',
+  FILESYSTEM: 'filesystem',
+  REPOSITORY: 'repository',
+  CONFIG: 'config',
+};
+
+export const SECURITY_SCAN_TYPE_VALUES = Object.values(SECURITY_SCAN_TYPE);
+
+export const SECURITY_SEVERITY = {
+  CRITICAL: 'critical',
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+  NEGLIGIBLE: 'negligible',
+  UNKNOWN: 'unknown',
+};
+
+export const SECURITY_SEVERITY_VALUES = Object.values(SECURITY_SEVERITY);
+
+export const SECURITY_FINDING_TYPE = {
+  VULNERABILITY: 'vulnerability',
+  MISCONFIGURATION: 'misconfiguration',
+  SECRET: 'secret',
+};
+
+export const SECURITY_FINDING_TYPE_VALUES = Object.values(SECURITY_FINDING_TYPE);
+
+export const SECURITY_FINDING_STATUS = {
+  OPEN: 'open',
+  ACKNOWLEDGED: 'acknowledged',
+  RESOLVED: 'resolved',
+  FALSE_POSITIVE: 'false_positive',
+};
+
+export const SECURITY_FINDING_STATUS_VALUES = Object.values(SECURITY_FINDING_STATUS);
+
+export const POLICY_RULE_TYPE = {
+  MAX_SEVERITY_COUNT: 'max_severity_count',
+  REQUIRED_SCAN: 'required_scan',
+};
+
+export const POLICY_RULE_TYPE_VALUES = Object.values(POLICY_RULE_TYPE);
+
+export const POLICY_ENFORCEMENT = {
+  BLOCKING: 'blocking',
+  WARNING: 'warning',
+};
+
+export const POLICY_ENFORCEMENT_VALUES = Object.values(POLICY_ENFORCEMENT);
+
+export const POLICY_EVALUATION_STATE = {
+  PASS: 'PASS',
+  FAIL: 'FAIL',
+  WARNING: 'WARNING',
+  NOT_EVALUATED: 'NOT_EVALUATED',
+};
+
+export const POLICY_EVALUATION_STATE_VALUES = Object.values(POLICY_EVALUATION_STATE);
+
 export const AUDIT_ACTIONS = {
   // Auth
   USER_REGISTERED: 'user.registered',
@@ -141,6 +218,20 @@ export const AUDIT_ACTIONS = {
   PIPELINE_RUN_RECEIVED: 'pipeline.run.received',
   PIPELINE_RUN_COMPLETED: 'pipeline.run.completed',
   PIPELINE_SYNCED: 'pipeline.synced',
+
+  // Security & Governance (Phase 3)
+  SECURITY_INTEGRATION_CREATED: 'security.integration.created',
+  SECURITY_INTEGRATION_ROTATED: 'security.integration.rotated',
+  SECURITY_INTEGRATION_DELETED: 'security.integration.deleted',
+  SECURITY_SCAN_INGESTED: 'security.scan.ingested',
+  SECURITY_SCAN_COMPLETED: 'security.scan.completed',
+  SECURITY_SCAN_FAILED: 'security.scan.failed',
+  SECURITY_FINDING_STATUS_CHANGED: 'security.finding.status.changed',
+  GOVERNANCE_POLICY_CREATED: 'governance.policy.created',
+  GOVERNANCE_POLICY_UPDATED: 'governance.policy.updated',
+  GOVERNANCE_POLICY_DELETED: 'governance.policy.deleted',
+  POLICY_GATE_EVALUATED: 'policy.gate.evaluated',
+  POLICY_GATE_OVERRIDDEN: 'policy.gate.overridden',
 };
 
 export const ENTITY_TYPES = {
@@ -151,6 +242,11 @@ export const ENTITY_TYPES = {
   REPOSITORY: 'repository',
   PIPELINE: 'pipeline',
   PIPELINE_RUN: 'pipeline_run',
+  SECURITY_INTEGRATION: 'security_integration',
+  SECURITY_SCAN: 'security_scan',
+  SECURITY_FINDING: 'security_finding',
+  GOVERNANCE_POLICY: 'governance_policy',
+  POLICY_GATE_RESULT: 'policy_gate_result',
 };
 
 // Issue counter starts at 100 so first issue is PROJECT-101
