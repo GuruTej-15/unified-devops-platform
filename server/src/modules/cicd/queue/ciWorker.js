@@ -16,6 +16,7 @@ import JenkinsClient from '../providers/jenkinsClient.js';
 import { getCiProvider } from '../providers/providerRegistry.js';
 import { decrypt } from '../../../shared/crypto.js';
 import { CI_PROVIDER } from '../../../shared/constants.js';
+import { processSecurityScanJob } from '../../security/securityScanProcessor.js';
 import logger from '../../../shared/logger.js';
 
 /**
@@ -334,6 +335,10 @@ export function initCiWorker() {
         return processReconciliationJob(job.data);
       }
 
+      if (job.name === 'security_scan_ingest') {
+        return processSecurityScanJob(job.data);
+      }
+
       throw new UnrecoverableError(`Unknown job name '${job.name}'`);
     },
     {
@@ -365,5 +370,6 @@ export function initCiWorker() {
 export default {
   processWebhookJob,
   processReconciliationJob,
+  processSecurityScanJob,
   initCiWorker,
 };
