@@ -72,9 +72,13 @@ export async function enqueueSecurityScanJob({
     }
   }
 
-  // When Redis/BullMQ is absent (e.g. in development/tests), record enqueue without synchronous worker execution
-  logger.info(
-    `[SECURITY QUEUE PRODUCER] Job simulated without Redis (integration: ${securityIntegrationId}, jobId: ${sanitizedJobId})`
+  // Development-only fallback when Redis is absent: execute in-process
+  logger.warn(
+    `[NON-DURABLE DEV FALLBACK] Redis/BullMQ unavailable. Executing security scan ${sanitizedJobId} in-process. This mode does NOT provide durable delivery guarantees.`
   );
-  return { enqueued: true, jobId: sanitizedJobId };
+
+  // Lazy import processor to avoid circular dependency
+  const { processSecurityScanJob } = await import('./securityScanProcessor.js');
+  const result = await processSecurityScanJob(jobData);
+  return { enqueued: false, fallbackExecuted: true, jobId: sanitizedJobId, result };
 }
