@@ -125,6 +125,11 @@ function setupEventBroadcasts() {
     'pipeline.run.received',
     'pipeline.run.completed',
     'pipeline.updated',
+    'security.scan.processing',
+    'security.scan.completed',
+    'security.scan.failed',
+    'policy.gate.evaluated',
+    'policy.gate.overridden',
   ];
 
   for (const event of projectEvents) {

@@ -184,6 +184,27 @@ export const POLICY_EVALUATION_STATE = {
 
 export const POLICY_EVALUATION_STATE_VALUES = Object.values(POLICY_EVALUATION_STATE);
 
+export const SECURITY_DELIVERY_STATUS = {
+  NOT_STARTED: 'NOT_STARTED',
+  PROCESSING: 'PROCESSING',
+  PASSED: 'PASSED',
+  FAILED: 'FAILED',
+  ERROR: 'ERROR',
+  NOT_EVALUATED: 'NOT_EVALUATED',
+};
+
+export const SECURITY_DELIVERY_STATUS_VALUES = Object.values(SECURITY_DELIVERY_STATUS);
+
+export const SECURITY_EVENTS = {
+  SCAN_PROCESSING: 'security.scan.processing',
+  SCAN_COMPLETED: 'security.scan.completed',
+  SCAN_FAILED: 'security.scan.failed',
+  POLICY_EVALUATED: 'policy.gate.evaluated',
+  POLICY_OVERRIDDEN: 'policy.gate.overridden',
+};
+
+export const SECURITY_EVENT_VALUES = Object.values(SECURITY_EVENTS);
+
 export const AUDIT_ACTIONS = {
   // Auth
   USER_REGISTERED: 'user.registered',

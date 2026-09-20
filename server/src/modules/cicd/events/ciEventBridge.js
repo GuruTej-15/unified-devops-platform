@@ -115,6 +115,73 @@ export async function publishPipelineEvent(
 }
 
 /**
+ * Publish a security/governance domain event through Redis Pub/Sub and local eventBus.
+ *
+ * @param {string} eventType - e.g. 'security.scan.completed', 'policy.gate.evaluated'
+ * @param {object} eventData - event payload fields
+ */
+export async function publishSecurityEvent(eventType, eventData = {}) {
+  const projectId = String(
+    eventData.projectId || eventData.project?._id || eventData.project || ''
+  );
+
+  if (!eventType || !projectId) {
+    logger.warn('Security Event Bridge: Cannot publish event without eventType and projectId', {
+      eventType,
+      projectId,
+    });
+    return { published: false, reason: 'Missing required event fields' };
+  }
+
+  // Safe, compact, secret-free event payload envelope
+  const eventPayload = {
+    domain: 'security',
+    eventType,
+    ...eventData,
+    projectId, // ensure string projectId
+    timestamp: eventData.timestamp || new Date().toISOString(),
+  };
+
+  // 1. Always emit on local process eventBus for in-process listeners
+  eventBus.emit(eventType, {
+    ...eventPayload,
+    project: projectId,
+    fromRedis: false,
+  });
+
+  // 2. Publish to Redis channel for cross-process delivery
+  const channel = config.cicd.eventChannel || 'cicd:pipeline-events';
+
+  try {
+    const publisher = await getPublisherClient();
+    if (!publisher) {
+      if (config.env === 'production') {
+        throw new Error('Redis publisher connection unavailable in production environment');
+      }
+      logger.warn(
+        '[NON-DURABLE DEV FALLBACK] Redis publisher unavailable; security event emitted in-process only'
+      );
+      return { published: false, fallbackInProcess: true, payload: eventPayload };
+    }
+
+    const serialized = JSON.stringify(eventPayload);
+    const receiverCount = await publisher.publish(channel, serialized);
+    logger.debug(
+      `Published security event '${eventType}' to Redis channel '${channel}' (${receiverCount} subscriber(s))`
+    );
+    return { published: true, receiverCount, payload: eventPayload };
+  } catch (err) {
+    logger.error(
+      `Security Event Bridge: Failed to publish '${eventType}' to Redis: ${err.message}`
+    );
+    if (config.env === 'production') {
+      throw err;
+    }
+    return { published: false, error: err.message, payload: eventPayload };
+  }
+}
+
+/**
  * Initialize dedicated Redis subscriber connection in the API server process
  * and route received events to the authorized Socket.io project room.
  *
@@ -196,7 +263,7 @@ export function handleIncomingRedisMessage(rawMessage) {
 
     // 2. Re-emit on API process eventBus so local event listeners (audit log, etc.) receive it
     eventBus.emit(data.eventType, {
-      pipelineRun: data,
+      ...(data.domain === 'security' ? data : { pipelineRun: data }),
       project: data.projectId,
       fromRedis: true,
     });
