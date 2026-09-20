@@ -65,3 +65,11 @@ export const getIssueActivity = async (req, res) => {
   );
   sendSuccess(res, { data: activity });
 };
+
+export const getIssueDeliveryState = async (req, res) => {
+  const deliveryState = await IssueService.getIssueDeliveryState(
+    req.params.projectId,
+    req.params.issueKey.toUpperCase()
+  );
+  sendSuccess(res, { data: deliveryState });
+};

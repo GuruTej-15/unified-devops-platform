@@ -4,12 +4,14 @@ import PolicyGateResult from './policyGateResult.model.js';
 import SecurityScan from './securityScan.model.js';
 import SecurityFinding from './securityFinding.model.js';
 import AuditService from '../audit/audit.service.js';
+import { publishSecurityEvent } from '../cicd/events/ciEventBridge.js';
 import {
   POLICY_RULE_TYPE,
   POLICY_ENFORCEMENT,
   POLICY_EVALUATION_STATE,
   SECURITY_SCAN_STATUS,
   SECURITY_FINDING_STATUS,
+  SECURITY_EVENTS,
   AUDIT_ACTIONS,
   ENTITY_TYPES,
 } from '../../shared/constants.js';
@@ -196,6 +198,28 @@ export default class PolicyEngineService {
         })),
       },
     });
+
+    // 8. Publish policy.gate.evaluated event via Redis Pub/Sub & Socket.io
+    try {
+      await publishSecurityEvent(SECURITY_EVENTS.POLICY_EVALUATED, {
+        projectId: String(projectId),
+        securityScanId: String(scan._id),
+        pipelineRunId: scan.pipelineRun ? String(scan.pipelineRun) : null,
+        gateStatus,
+        policiesEvaluated: results.length,
+        results: results.map((r) => ({
+          policyId: String(r.policy),
+          policyName: r.policyName,
+          ruleType: r.ruleType,
+          enforcement: r.enforcement,
+          passed: r.passed,
+          evaluationStatus: r.evaluationStatus,
+          isOverridden: r.isOverridden,
+        })),
+      });
+    } catch (eventErr) {
+      logger.error(`PolicyEngine: Failed to publish policy.gate.evaluated: ${eventErr.message}`);
+    }
 
     logger.info(
       `Policy evaluation for scan ${scan._id}: gateStatus=${gateStatus}, ` +
@@ -483,6 +507,26 @@ export default class PolicyEngineService {
         overrideJustification: justification.trim(),
       },
     });
+
+    // Publish policy.gate.overridden event via Redis Pub/Sub & Socket.io
+    try {
+      await publishSecurityEvent(SECURITY_EVENTS.POLICY_OVERRIDDEN, {
+        projectId: String(projectId),
+        gateResultId: String(gateResult._id),
+        securityScanId: String(gateResult.scan),
+        pipelineRunId: gateResult.pipelineRun ? String(gateResult.pipelineRun) : null,
+        policyId: String(gateResult.policy),
+        policyName: gateResult.policyName,
+        ruleType: gateResult.ruleType,
+        originalPassed: gateResult.passed,
+        originalEvaluationStatus: gateResult.evaluationStatus,
+        overriddenBy: String(actorId),
+        overrideStatus: 'approved',
+        overrideJustification: justification.trim(),
+      });
+    } catch (eventErr) {
+      logger.error(`PolicyEngine: Failed to publish policy.gate.overridden: ${eventErr.message}`);
+    }
 
     logger.info(
       `Policy gate override: result=${gateResult._id}, policy=${gateResult.policyName}, ` +

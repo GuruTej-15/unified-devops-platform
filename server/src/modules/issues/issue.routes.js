@@ -44,5 +44,11 @@ router.post(
 );
 router.get('/:issueKey/comments', authenticate, projectAccess(), controller.getComments);
 router.get('/:issueKey/activity', authenticate, projectAccess(), controller.getIssueActivity);
+router.get(
+  '/:issueKey/delivery-state',
+  authenticate,
+  projectAccess(),
+  controller.getIssueDeliveryState
+);
 
 export default router;

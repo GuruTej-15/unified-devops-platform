@@ -5,9 +5,12 @@ import SecurityDelivery from './securityDelivery.model.js';
 import { getSecurityProvider } from './providers/securityProviderRegistry.js';
 import SecurityReconciliationService from './securityReconciliation.service.js';
 import AuditService from '../audit/audit.service.js';
+import PolicyEngineService from './policyEngine.service.js';
+import { publishSecurityEvent } from '../cicd/events/ciEventBridge.js';
 import {
   SECURITY_SCAN_STATUS,
   SECURITY_FINDING_STATUS,
+  SECURITY_EVENTS,
   AUDIT_ACTIONS,
   ENTITY_TYPES,
 } from '../../shared/constants.js';
@@ -48,6 +51,7 @@ export async function processSecurityScanJob(jobData) {
   } = jobData;
 
   const logPrefix = `[SecurityScan ${reportDigest?.substring(0, 12)}...]`;
+  let scan = null;
 
   // 1. Transition SecurityDelivery: queued → processing
   await SecurityDelivery.findOneAndUpdate(
@@ -58,6 +62,19 @@ export async function processSecurityScanJob(jobData) {
     },
     { $set: { status: 'processing' } }
   );
+
+  // Publish security.scan.processing event (safe: non-blocking)
+  try {
+    await publishSecurityEvent(SECURITY_EVENTS.SCAN_PROCESSING, {
+      projectId: String(projectId),
+      pipelineRunId: pipelineRunId ? String(pipelineRunId) : null,
+      reportDigest,
+      provider: providerName,
+      status: 'processing',
+    });
+  } catch (pubErr) {
+    logger.warn(`${logPrefix} Failed to publish processing event: ${pubErr.message}`);
+  }
 
   try {
     // 2. Idempotency: check if a scan already exists for this integration+reportDigest
@@ -111,7 +128,6 @@ export async function processSecurityScanJob(jobData) {
 
     // 5. MongoDB transaction: scan creation + finding persistence + reconciliation
     const session = await mongoose.startSession();
-    let scan;
     let reconciliationStats = { resolved: 0, reopened: 0, preserved: 0 };
 
     try {
@@ -304,6 +320,41 @@ export async function processSecurityScanJob(jobData) {
       },
     });
 
+    // 8. Trigger automatic policy evaluation (safe: after scan persistence commit)
+    let gateStatus = null;
+    try {
+      const evalResult = await PolicyEngineService.evaluatePolicies({
+        projectId,
+        securityScanId: scan._id,
+      });
+      gateStatus = evalResult.gateStatus;
+    } catch (policyErr) {
+      logger.error(`${logPrefix} Policy evaluation error: ${policyErr.message}`);
+      // Do NOT fail the scan! DB scan persistence remains authoritative.
+    }
+
+    // 9. Publish security.scan.completed event via Redis Pub/Sub & Socket.io
+    try {
+      await publishSecurityEvent(SECURITY_EVENTS.SCAN_COMPLETED, {
+        projectId: String(projectId),
+        securityScanId: String(scan._id),
+        pipelineRunId: pipelineRunId ? String(pipelineRunId) : null,
+        repositoryId: repositoryId ? String(repositoryId) : null,
+        provider: providerName,
+        target: finalTarget,
+        scanType: finalScanType,
+        status: 'completed',
+        summary,
+        findingCount: normalizedFindings.length,
+        gateStatus: gateStatus || scan.gateStatus || null,
+      });
+    } catch (eventErr) {
+      logger.error(
+        `${logPrefix} Failed to publish security.scan.completed event: ${eventErr.message}`
+      );
+      // Non-fatal: DB persistence remains authoritative
+    }
+
     logger.info(
       `${logPrefix} Scan completed: scanId=${scan._id}, findings=${normalizedFindings.length}, ` +
         `resolved=${reconciliationStats.resolved}, reopened=${reconciliationStats.reopened}, ` +
@@ -317,6 +368,7 @@ export async function processSecurityScanJob(jobData) {
       status: SECURITY_SCAN_STATUS.COMPLETED,
       findingCount: normalizedFindings.length,
       summary,
+      gateStatus: gateStatus || scan.gateStatus || null,
       reconciliation: reconciliationStats,
     };
   } catch (err) {
@@ -346,6 +398,23 @@ export async function processSecurityScanJob(jobData) {
         error: err.message?.substring(0, 200),
       },
     });
+
+    // Publish security.scan.failed event via Redis Pub/Sub & Socket.io
+    try {
+      await publishSecurityEvent(SECURITY_EVENTS.SCAN_FAILED, {
+        projectId: String(projectId),
+        securityScanId: scan?._id ? String(scan._id) : null,
+        pipelineRunId: pipelineRunId ? String(pipelineRunId) : null,
+        reportDigest,
+        provider: providerName,
+        status: 'failed',
+        error: err.message?.substring(0, 200),
+      });
+    } catch (eventErr) {
+      logger.error(
+        `${logPrefix} Failed to publish security.scan.failed event: ${eventErr.message}`
+      );
+    }
 
     throw err;
   }
