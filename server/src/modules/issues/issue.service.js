@@ -8,6 +8,7 @@ import PipelineRun from '../cicd/pipelineRun.model.js';
 import { NotFoundError } from '../../shared/errors.js';
 import eventBus from '../notifications/eventBus.js';
 import SecurityDeliveryStateService from '../security/securityDeliveryState.service.js';
+import DeploymentService from '../deployment/deployment.service.js';
 
 export default class IssueService {
   static async createIssue(projectId, data, reporterId) {
@@ -229,7 +230,13 @@ export default class IssueService {
       normalizedKey
     );
 
-    // 4. Assemble authoritative delivery state
+    // 4. Authoritative Deployment projection
+    const deploymentProjection = await DeploymentService.getIssueDeploymentProjection(
+      projectId,
+      normalizedKey
+    );
+
+    // 5. Assemble authoritative delivery state
     return {
       issueKey: normalizedKey,
       issue: {
@@ -313,10 +320,19 @@ export default class IssueService {
           name: 'Governance',
           ...securityProjection.governance,
         },
+        deployment: {
+          id: 'deployment',
+          name: 'Deployment',
+          ...deploymentProjection,
+        },
       },
       security: securityProjection.security,
       governance: securityProjection.governance,
-      traceability: securityProjection.traceability,
+      deployment: deploymentProjection,
+      traceability: {
+        ...securityProjection.traceability,
+        associatedDeploymentId: deploymentProjection.latestDeployment?._id || null,
+      },
     };
   }
 }

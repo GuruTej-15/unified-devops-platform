@@ -205,6 +205,51 @@ export const SECURITY_EVENTS = {
 
 export const SECURITY_EVENT_VALUES = Object.values(SECURITY_EVENTS);
 
+export const DEPLOYMENT_PROVIDER = {
+  GITHUB_ACTIONS: 'github_actions',
+  JENKINS: 'jenkins',
+  GENERIC: 'generic',
+};
+
+export const DEPLOYMENT_PROVIDER_VALUES = Object.values(DEPLOYMENT_PROVIDER);
+
+export const DEPLOYMENT_STATUS = {
+  QUEUED: 'queued',
+  IN_PROGRESS: 'in_progress',
+  SUCCESS: 'success',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled',
+  UNKNOWN: 'unknown',
+};
+
+export const DEPLOYMENT_STATUS_VALUES = Object.values(DEPLOYMENT_STATUS);
+
+export const DEPLOYMENT_GOVERNANCE_STATE = {
+  ALLOWED: 'ALLOWED',
+  BLOCKED: 'BLOCKED',
+  OVERRIDDEN: 'OVERRIDDEN',
+  NOT_EVALUATED: 'NOT_EVALUATED',
+};
+
+export const DEPLOYMENT_GOVERNANCE_STATE_VALUES = Object.values(DEPLOYMENT_GOVERNANCE_STATE);
+
+export const DEPLOYMENT_ENVIRONMENT = {
+  DEVELOPMENT: 'development',
+  STAGING: 'staging',
+  PRODUCTION: 'production',
+};
+
+export const DEPLOYMENT_ENVIRONMENT_VALUES = Object.values(DEPLOYMENT_ENVIRONMENT);
+
+export const DEPLOYMENT_EVENTS = {
+  QUEUED: 'deployment.queued',
+  STARTED: 'deployment.started',
+  COMPLETED: 'deployment.completed',
+  FAILED: 'deployment.failed',
+};
+
+export const DEPLOYMENT_EVENT_VALUES = Object.values(DEPLOYMENT_EVENTS);
+
 export const AUDIT_ACTIONS = {
   // Auth
   USER_REGISTERED: 'user.registered',
@@ -253,6 +298,10 @@ export const AUDIT_ACTIONS = {
   GOVERNANCE_POLICY_DELETED: 'governance.policy.deleted',
   POLICY_GATE_EVALUATED: 'policy.gate.evaluated',
   POLICY_GATE_OVERRIDDEN: 'policy.gate.overridden',
+
+  // Deployment (Phase 3 Step 8)
+  DEPLOYMENT_CREATED: 'deployment.created',
+  DEPLOYMENT_UPDATED: 'deployment.updated',
 };
 
 export const ENTITY_TYPES = {
@@ -268,6 +317,7 @@ export const ENTITY_TYPES = {
   SECURITY_FINDING: 'security_finding',
   GOVERNANCE_POLICY: 'governance_policy',
   POLICY_GATE_RESULT: 'policy_gate_result',
+  DEPLOYMENT: 'deployment',
 };
 
 // Issue counter starts at 100 so first issue is PROJECT-101

@@ -17,6 +17,7 @@ import cicdRoutes from './modules/cicd/cicd.routes.js';
 import webhookRoutes from './modules/cicd/webhook.routes.js';
 import auditRoutes from './modules/audit/audit.routes.js';
 import securityRoutes from './modules/security/security.routes.js';
+import deploymentRoutes from './modules/deployment/deployment.routes.js';
 
 const app = express();
 
@@ -81,6 +82,7 @@ app.use('/api/v1/webhooks', webhookRoutes);
 app.use('/api/v1/projects/:projectId/issues', issueRoutes);
 app.use('/api/v1/projects/:projectId/repositories', vcsRoutes);
 app.use('/api/v1/projects/:projectId/security', securityRoutes);
+app.use('/api/v1/projects/:projectId/deployments', deploymentRoutes);
 app.use('/api/v1/projects/:projectId', cicdRoutes);
 
 // --- 404 handler ---

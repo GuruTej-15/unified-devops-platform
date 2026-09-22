@@ -4,6 +4,8 @@ import {
   ArrowTopRightOnSquareIcon,
   XCircleIcon,
   ArrowPathIcon,
+  ExclamationTriangleIcon,
+  KeyIcon,
 } from '@heroicons/react/24/solid';
 import { cn, formatDate } from '../../../lib/utils.js';
 
@@ -15,7 +17,7 @@ function formatDuration(seconds) {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 }
 
-export default function DeliveryStateTracker({ issue, activity = {} }) {
+export default function DeliveryStateTracker({ issue, activity = {}, deliveryState = null }) {
   const { commits = [], pullRequests = [], branches = [], pipelineRuns = [] } = activity;
 
   const hasCommits = commits.length > 0;
@@ -59,6 +61,104 @@ export default function DeliveryStateTracker({ issue, activity = {} }) {
       ciTitle = `◌ #${latestRun.runNumber} ${latestRun.workflowName}`;
       ciDetail = `Queued on ${latestRun.branch}`;
       ciBadge = 'Queued';
+    }
+  }
+
+  // Security Stage: derived from authoritative backend deliveryState
+  const sec = deliveryState?.security || null;
+  let secStatus = 'pending';
+  let secTitle = 'No security scan linked yet';
+  let secDetail = 'CI runs with security reports will ingest vulnerability scans';
+  let secBadge = 'NOT_STARTED';
+
+  if (sec) {
+    if (sec.status === 'PASSED') {
+      secStatus = 'completed';
+      secTitle = `✓ ${sec.latestScan?.provider?.toUpperCase() || 'TRIVY'}: ${sec.latestScan?.target || 'Target scanned'}`;
+      secDetail = `${sec.findingsSummary?.total ?? sec.latestScan?.findingCount ?? 0} findings (${sec.findingsSummary?.critical ?? 0} Crit • ${sec.findingsSummary?.high ?? 0} High • ${sec.findingsSummary?.medium ?? 0} Med)`;
+      secBadge = 'PASSED';
+    } else if (sec.status === 'FAILED') {
+      secStatus = 'failed';
+      secTitle = `✕ ${sec.latestScan?.provider?.toUpperCase() || 'TRIVY'}: ${sec.latestScan?.target || 'Scan Failed'}`;
+      secDetail = `${sec.findingsSummary?.total ?? sec.latestScan?.findingCount ?? 0} findings (${sec.findingsSummary?.critical ?? 0} Crit • ${sec.findingsSummary?.high ?? 0} High)`;
+      secBadge = 'FAILED';
+    } else if (sec.status === 'PROCESSING') {
+      secStatus = 'active';
+      secTitle = `● ${sec.latestScan?.provider?.toUpperCase() || 'TRIVY'}: Scan in progress`;
+      secDetail = `Analyzing vulnerabilities for ${sec.latestScan?.target || 'target'}`;
+      secBadge = 'PROCESSING';
+    } else if (sec.status === 'ERROR') {
+      secStatus = 'failed';
+      secTitle = '✕ Security scan error';
+      secDetail = sec.latestScan?.errorMessage || sec.error || 'Scan processing failed';
+      secBadge = 'ERROR';
+    } else if (sec.status === 'NOT_EVALUATED') {
+      secStatus = 'pending';
+      secTitle = '◌ Security scan not evaluated';
+      secDetail = 'Insufficient scan data to complete assessment';
+      secBadge = 'NOT_EVALUATED';
+    }
+  }
+
+  // Governance Stage: derived from authoritative backend deliveryState
+  const gov = deliveryState?.governance || null;
+  let govStatus = 'pending';
+  let govTitle = 'No governance gate evaluated';
+  let govDetail = 'Policies evaluate automatically after security scan completion';
+  let govBadge = 'NOT_STARTED';
+
+  if (gov) {
+    if (gov.status === 'PASS') {
+      govStatus = 'completed';
+      govTitle = '✓ Policy gates passed';
+      govDetail = `${gov.passed ?? 0} policy rule(s) evaluated and compliant`;
+      govBadge = 'PASS';
+    } else if (gov.status === 'FAIL') {
+      govStatus = gov.overridden ? 'completed' : 'failed';
+      govTitle = gov.overridden ? '⚠ Policy gate exception approved' : '✕ Policy gate blocked';
+      govDetail = `${gov.blockingFailures ?? 0} blocking failure(s)${gov.overridden ? ' • (Overridden by Security Admin)' : ''}`;
+      govBadge = gov.overridden ? 'OVERRIDDEN' : 'FAIL';
+    } else if (gov.status === 'WARNING') {
+      govStatus = 'completed';
+      govTitle = '⚠ Advisory warning';
+      govDetail = `${gov.warnings ?? 0} warning-level policy violation(s) • Non-blocking`;
+      govBadge = 'WARNING';
+    } else if (gov.status === 'NOT_EVALUATED') {
+      govStatus = 'pending';
+      govTitle = '◌ Policy gate not evaluated';
+      govDetail = `${gov.notEvaluated ?? 0} policy rule(s) require additional scan data`;
+      govBadge = 'NOT_EVALUATED';
+    }
+  }
+
+  // Deployment Stage: derived from authoritative backend deliveryState
+  const dep = deliveryState?.deployment || null;
+  let depStatus = 'pending';
+  let depTitle = 'No deployment recorded';
+  let depDetail = 'Target environment deployment will appear when CI/CD releases this change';
+  let depBadge = 'NOT_STARTED';
+  let depUrl = null;
+
+  if (dep?.latestDeployment) {
+    const latest = dep.latestDeployment;
+    depUrl = latest.url;
+    const provUpper = (latest.provider || 'CI').toUpperCase();
+
+    if (dep.status === 'completed') {
+      depStatus = 'completed';
+      depTitle = `✓ ${latest.environment} release (${provUpper})`;
+      depDetail = `Deployed to ${latest.environment}${latest.commitSha ? ` • ${latest.commitSha.substring(0, 7)}` : ''}${latest.duration != null ? ` • ${formatDuration(latest.duration)}` : ''} • Governance: ${latest.governanceDecision || 'EVALUATED'}`;
+      depBadge = dep.isGovernanceViolation ? 'VIOLATION' : 'SUCCESS';
+    } else if (dep.status === 'failed') {
+      depStatus = 'failed';
+      depTitle = `✕ ${latest.environment} deployment failed`;
+      depDetail = `${latest.errorMessage || 'Deployment failed'}${latest.duration != null ? ` • ${formatDuration(latest.duration)}` : ''}`;
+      depBadge = 'FAILED';
+    } else if (dep.status === 'active') {
+      depStatus = 'active';
+      depTitle = `● Deploying to ${latest.environment}`;
+      depDetail = `Release in progress via ${provUpper}${latest.branch ? ` on ${latest.branch}` : ''}`;
+      depBadge = latest.status === 'queued' ? 'QUEUED' : 'IN_PROGRESS';
     }
   }
 
@@ -115,21 +215,28 @@ export default function DeliveryStateTracker({ issue, activity = {} }) {
     },
     {
       id: 'security',
-      name: 'Security & Governance',
-      status: 'future',
-      phase: 'Phase 3',
-      title: 'Trivy / Snyk security scan gates & policy approval',
-      detail: 'Vulnerability analysis, license compliance, and required approval sign-offs',
-      badge: 'Phase 3',
+      name: 'Security Scan',
+      status: secStatus,
+      title: secTitle,
+      detail: secDetail,
+      badge: secBadge,
+    },
+    {
+      id: 'governance',
+      name: 'Governance Gate',
+      status: govStatus,
+      title: govTitle,
+      detail: govDetail,
+      badge: govBadge,
     },
     {
       id: 'deployment',
       name: 'Deployment',
-      status: 'future',
-      phase: 'Phase 4',
-      title: 'Docker / Kubernetes release rollout',
-      detail: 'Target cluster environment deployment and live service health monitoring',
-      badge: 'Phase 4',
+      status: depStatus,
+      title: depTitle,
+      detail: depDetail,
+      badge: depBadge,
+      url: depUrl,
     },
   ];
 
@@ -139,8 +246,8 @@ export default function DeliveryStateTracker({ issue, activity = {} }) {
         <div>
           <h3 className="text-base font-bold text-gray-900">End-to-End Delivery State</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Unified delivery pipeline state across source control, issue tracking, CI, and future
-            execution gates
+            Unified delivery pipeline state across issue, branch, commit, PR, CI, security scan,
+            governance gates, and deployment
           </p>
         </div>
       </div>
@@ -157,7 +264,7 @@ export default function DeliveryStateTracker({ issue, activity = {} }) {
             const isFailed = stage.status === 'failed';
 
             return (
-              <li key={stage.id}>
+              <li key={stage.id} data-testid={`delivery-stage-${stage.id}`}>
                 <div className="relative pb-8">
                   {!isLast && (
                     <span
@@ -209,11 +316,36 @@ export default function DeliveryStateTracker({ issue, activity = {} }) {
                         </span>
                         <span
                           className={cn(
-                            'text-[10px] font-semibold px-2 py-0.5 rounded-full border',
-                            isCompleted && 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                            isActive && 'bg-primary-50 text-primary-700 border-primary-200',
-                            isPending && 'bg-gray-50 text-gray-600 border-gray-200',
-                            isFailed && 'bg-red-50 text-red-700 border-red-200',
+                            'text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase',
+                            (stage.badge === 'PASSED' ||
+                              stage.badge === 'PASS' ||
+                              stage.badge === 'COMPLETED' ||
+                              stage.badge === 'SUCCESS') &&
+                              'bg-emerald-50 text-emerald-700 border-emerald-200 font-mono',
+                            (stage.badge === 'FAILED' ||
+                              stage.badge === 'FAIL' ||
+                              stage.badge === 'ERROR') &&
+                              'bg-red-50 text-red-700 border-red-200 font-mono',
+                            (stage.badge === 'PROCESSING' || stage.badge === 'IN_PROGRESS') &&
+                              'bg-blue-50 text-blue-700 border-blue-200 font-mono',
+                            stage.badge === 'QUEUED' &&
+                              'bg-sky-50 text-sky-700 border-sky-200 font-mono',
+                            stage.badge === 'VIOLATION' &&
+                              'bg-red-100 text-red-800 border-red-300 font-mono',
+                            stage.badge === 'WARNING' &&
+                              'bg-amber-50 text-amber-700 border-amber-200 font-mono',
+                            stage.badge === 'OVERRIDDEN' &&
+                              'bg-purple-50 text-purple-700 border-purple-200 font-mono',
+                            (stage.badge === 'NOT_EVALUATED' || stage.badge === 'NOT_STARTED') &&
+                              'bg-slate-50 text-slate-600 border-slate-200 font-mono',
+                            isActive &&
+                              stage.badge !== 'PROCESSING' &&
+                              stage.badge !== 'IN_PROGRESS' &&
+                              'bg-primary-50 text-primary-700 border-primary-200',
+                            isPending &&
+                              stage.badge !== 'NOT_STARTED' &&
+                              stage.badge !== 'NOT_EVALUATED' &&
+                              'bg-gray-50 text-gray-600 border-gray-200',
                             isFuture && 'bg-slate-50 text-slate-500 border-slate-200 font-mono'
                           )}
                         >

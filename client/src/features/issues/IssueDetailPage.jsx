@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
 import api from '../../lib/axios.js';
+import { getSocket } from '../../lib/socket.js';
 import Card from '../../components/ui/Card.jsx';
-import Button from '../../components/ui/Button.jsx';
 import Avatar from '../../components/ui/Avatar.jsx';
-import { StatusBadge, PriorityBadge, TypeBadge } from './components/IssueStatusBadge.jsx';
+import { TypeBadge } from './components/IssueStatusBadge.jsx';
 import DeliveryStateTracker from './components/DeliveryStateTracker.jsx';
+import SecurityStatusSection from './components/SecurityStatusSection.jsx';
+import GovernanceGateSection from './components/GovernanceGateSection.jsx';
+import DeploymentStatusSection from './components/DeploymentStatusSection.jsx';
 import CommentSection from './components/CommentSection.jsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.jsx';
 import { formatDate } from '../../lib/utils.js';
@@ -15,22 +18,26 @@ export default function IssueDetailPage() {
 
   const [issue, setIssue] = useState(null);
   const [activity, setActivity] = useState({ commits: [], pullRequests: [], branches: [] });
+  const [deliveryState, setDeliveryState] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState('');
   const [priority, setPriority] = useState('');
 
   const fetchIssueData = async () => {
     try {
       setLoading(true);
-      const [issueRes, activityRes] = await Promise.all([
+      const [issueRes, activityRes, deliveryRes] = await Promise.all([
         api.get(`/projects/${projectId}/issues/${issueKey}`),
         api.get(`/projects/${projectId}/issues/${issueKey}/activity`),
+        api
+          .get(`/projects/${projectId}/issues/${issueKey}/delivery-state`)
+          .catch((err) => ({ data: null, error: err })),
       ]);
       setIssue(issueRes.data);
       setStatus(issueRes.data.status);
       setPriority(issueRes.data.priority);
       setActivity(activityRes.data || {});
+      setDeliveryState(deliveryRes.data || null);
     } catch (err) {
       console.error('Failed to load issue details', err);
     } finally {
@@ -42,6 +49,54 @@ export default function IssueDetailPage() {
     if (projectId && issueKey) {
       fetchIssueData();
     }
+  }, [projectId, issueKey]);
+
+  // Real-time Socket.io invalidation & refresh for CI, Security, and Governance events
+  useEffect(() => {
+    if (!projectId || !issueKey) return;
+
+    const socket = getSocket();
+    socket.emit('join:project', projectId);
+
+    const handleRealtimeUpdate = () => {
+      // Refresh authoritative delivery state and activity without full page reload
+      api
+        .get(`/projects/${projectId}/issues/${issueKey}/delivery-state`)
+        .then((res) => {
+          if (res.data) setDeliveryState(res.data);
+        })
+        .catch((err) => console.error('Realtime delivery state refresh error:', err));
+
+      api
+        .get(`/projects/${projectId}/issues/${issueKey}/activity`)
+        .then((res) => {
+          if (res.data) setActivity(res.data);
+        })
+        .catch((err) => console.error('Realtime activity refresh error:', err));
+    };
+
+    const realtimeEvents = [
+      'security.scan.processing',
+      'security.scan.completed',
+      'security.scan.failed',
+      'policy.gate.evaluated',
+      'policy.gate.overridden',
+      'deployment.queued',
+      'deployment.started',
+      'deployment.completed',
+      'deployment.failed',
+      'pipeline.run.received',
+      'pipeline.run.completed',
+      'pipeline.updated',
+      'issue.updated',
+      'issue.status.changed',
+    ];
+
+    realtimeEvents.forEach((evt) => socket.on(evt, handleRealtimeUpdate));
+
+    return () => {
+      realtimeEvents.forEach((evt) => socket.off(evt, handleRealtimeUpdate));
+    };
   }, [projectId, issueKey]);
 
   const handleUpdateStatus = async (newStatus) => {
@@ -113,9 +168,9 @@ export default function IssueDetailPage() {
         </div>
       </div>
 
-      {/* Main Grid: Left = Details & Discussion, Right = Delivery State & Attributes */}
+      {/* Main Grid: Left = Details, Security & Discussion, Right = Delivery State & Attributes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Description & Comments */}
+        {/* Left Column: Description, Security Scan, Governance Gate, Comments */}
         <div className="lg:col-span-2 space-y-6">
           <Card title="Description">
             {issue.description ? (
@@ -142,6 +197,15 @@ export default function IssueDetailPage() {
             )}
           </Card>
 
+          {/* Authoritative Security Scan Status & Vulnerabilities */}
+          <SecurityStatusSection security={deliveryState?.security} />
+
+          {/* Authoritative Governance Policy Gates */}
+          <GovernanceGateSection governance={deliveryState?.governance} />
+
+          {/* Authoritative Deployment & Release Governance */}
+          <DeploymentStatusSection deployment={deliveryState?.deployment} />
+
           {/* Comment Stream */}
           <Card>
             <CommentSection projectId={projectId} issueKey={issueKey} />
@@ -151,7 +215,7 @@ export default function IssueDetailPage() {
         {/* Right Column: Unified Delivery State Tracker & Metadata */}
         <div className="space-y-6">
           {/* Unified Delivery State Tracker */}
-          <DeliveryStateTracker issue={issue} activity={activity} />
+          <DeliveryStateTracker issue={issue} activity={activity} deliveryState={deliveryState} />
 
           {/* Issue Attributes */}
           <Card title="Attributes">
