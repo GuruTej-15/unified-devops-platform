@@ -131,6 +131,37 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
     }
   }
 
+  // Deployment Stage: derived from authoritative backend deliveryState
+  const dep = deliveryState?.deployment || null;
+  let depStatus = 'pending';
+  let depTitle = 'No deployment recorded';
+  let depDetail = 'Target environment deployment will appear when CI/CD releases this change';
+  let depBadge = 'NOT_STARTED';
+  let depUrl = null;
+
+  if (dep?.latestDeployment) {
+    const latest = dep.latestDeployment;
+    depUrl = latest.url;
+    const provUpper = (latest.provider || 'CI').toUpperCase();
+
+    if (dep.status === 'completed') {
+      depStatus = 'completed';
+      depTitle = `✓ ${latest.environment} release (${provUpper})`;
+      depDetail = `Deployed to ${latest.environment}${latest.commitSha ? ` • ${latest.commitSha.substring(0, 7)}` : ''}${latest.duration != null ? ` • ${formatDuration(latest.duration)}` : ''} • Governance: ${latest.governanceDecision || 'EVALUATED'}`;
+      depBadge = dep.isGovernanceViolation ? 'VIOLATION' : 'SUCCESS';
+    } else if (dep.status === 'failed') {
+      depStatus = 'failed';
+      depTitle = `✕ ${latest.environment} deployment failed`;
+      depDetail = `${latest.errorMessage || 'Deployment failed'}${latest.duration != null ? ` • ${formatDuration(latest.duration)}` : ''}`;
+      depBadge = 'FAILED';
+    } else if (dep.status === 'active') {
+      depStatus = 'active';
+      depTitle = `● Deploying to ${latest.environment}`;
+      depDetail = `Release in progress via ${provUpper}${latest.branch ? ` on ${latest.branch}` : ''}`;
+      depBadge = latest.status === 'queued' ? 'QUEUED' : 'IN_PROGRESS';
+    }
+  }
+
   const stages = [
     {
       id: 'issue',
@@ -201,11 +232,11 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
     {
       id: 'deployment',
       name: 'Deployment',
-      status: 'future',
-      phase: 'Phase 4',
-      title: 'Docker / Kubernetes release rollout',
-      detail: 'Target cluster environment deployment and live service health monitoring',
-      badge: 'Phase 4',
+      status: depStatus,
+      title: depTitle,
+      detail: depDetail,
+      badge: depBadge,
+      url: depUrl,
     },
   ];
 
@@ -215,8 +246,8 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
         <div>
           <h3 className="text-base font-bold text-gray-900">End-to-End Delivery State</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Unified delivery pipeline state across issue, branch, commit, PR, CI, security scan, and
-            governance gates
+            Unified delivery pipeline state across issue, branch, commit, PR, CI, security scan,
+            governance gates, and deployment
           </p>
         </div>
       </div>
@@ -288,14 +319,19 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
                             'text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase',
                             (stage.badge === 'PASSED' ||
                               stage.badge === 'PASS' ||
-                              stage.badge === 'COMPLETED') &&
+                              stage.badge === 'COMPLETED' ||
+                              stage.badge === 'SUCCESS') &&
                               'bg-emerald-50 text-emerald-700 border-emerald-200 font-mono',
                             (stage.badge === 'FAILED' ||
                               stage.badge === 'FAIL' ||
                               stage.badge === 'ERROR') &&
                               'bg-red-50 text-red-700 border-red-200 font-mono',
-                            stage.badge === 'PROCESSING' &&
+                            (stage.badge === 'PROCESSING' || stage.badge === 'IN_PROGRESS') &&
                               'bg-blue-50 text-blue-700 border-blue-200 font-mono',
+                            stage.badge === 'QUEUED' &&
+                              'bg-sky-50 text-sky-700 border-sky-200 font-mono',
+                            stage.badge === 'VIOLATION' &&
+                              'bg-red-100 text-red-800 border-red-300 font-mono',
                             stage.badge === 'WARNING' &&
                               'bg-amber-50 text-amber-700 border-amber-200 font-mono',
                             stage.badge === 'OVERRIDDEN' &&
@@ -304,6 +340,7 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
                               'bg-slate-50 text-slate-600 border-slate-200 font-mono',
                             isActive &&
                               stage.badge !== 'PROCESSING' &&
+                              stage.badge !== 'IN_PROGRESS' &&
                               'bg-primary-50 text-primary-700 border-primary-200',
                             isPending &&
                               stage.badge !== 'NOT_STARTED' &&

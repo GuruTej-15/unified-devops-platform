@@ -130,6 +130,10 @@ function setupEventBroadcasts() {
     'security.scan.failed',
     'policy.gate.evaluated',
     'policy.gate.overridden',
+    'deployment.queued',
+    'deployment.started',
+    'deployment.completed',
+    'deployment.failed',
   ];
 
   for (const event of projectEvents) {

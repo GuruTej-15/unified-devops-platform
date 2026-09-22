@@ -182,6 +182,73 @@ export async function publishSecurityEvent(eventType, eventData = {}) {
 }
 
 /**
+ * Publish a deployment domain event through Redis Pub/Sub and local eventBus.
+ *
+ * @param {string} eventType - e.g. 'deployment.queued', 'deployment.started', 'deployment.completed', 'deployment.failed'
+ * @param {object} eventData - deployment payload fields
+ */
+export async function publishDeploymentEvent(eventType, eventData = {}) {
+  const projectId = String(
+    eventData.projectId || eventData.project?._id || eventData.project || ''
+  );
+
+  if (!eventType || !projectId) {
+    logger.warn('Deployment Event Bridge: Cannot publish event without eventType and projectId', {
+      eventType,
+      projectId,
+    });
+    return { published: false, reason: 'Missing required event fields' };
+  }
+
+  // Safe, compact, secret-free deployment event payload envelope
+  const eventPayload = {
+    domain: 'deployment',
+    eventType,
+    ...eventData,
+    projectId,
+    timestamp: eventData.timestamp || new Date().toISOString(),
+  };
+
+  // 1. Emit on local process eventBus
+  eventBus.emit(eventType, {
+    ...eventPayload,
+    project: projectId,
+    fromRedis: false,
+  });
+
+  // 2. Publish to Redis channel for cross-process delivery
+  const channel = config.cicd.eventChannel || 'cicd:pipeline-events';
+
+  try {
+    const publisher = await getPublisherClient();
+    if (!publisher) {
+      if (config.env === 'production') {
+        throw new Error('Redis publisher connection unavailable in production environment');
+      }
+      logger.warn(
+        '[NON-DURABLE DEV FALLBACK] Redis publisher unavailable; deployment event emitted in-process only'
+      );
+      return { published: false, fallbackInProcess: true, payload: eventPayload };
+    }
+
+    const serialized = JSON.stringify(eventPayload);
+    const receiverCount = await publisher.publish(channel, serialized);
+    logger.debug(
+      `Published deployment event '${eventType}' to Redis channel '${channel}' (${receiverCount} subscriber(s))`
+    );
+    return { published: true, receiverCount, payload: eventPayload };
+  } catch (err) {
+    logger.error(
+      `Deployment Event Bridge: Failed to publish '${eventType}' to Redis: ${err.message}`
+    );
+    if (config.env === 'production') {
+      throw err;
+    }
+    return { published: false, error: err.message, payload: eventPayload };
+  }
+}
+
+/**
  * Initialize dedicated Redis subscriber connection in the API server process
  * and route received events to the authorized Socket.io project room.
  *

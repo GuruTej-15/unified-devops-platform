@@ -8,6 +8,7 @@ import { TypeBadge } from './components/IssueStatusBadge.jsx';
 import DeliveryStateTracker from './components/DeliveryStateTracker.jsx';
 import SecurityStatusSection from './components/SecurityStatusSection.jsx';
 import GovernanceGateSection from './components/GovernanceGateSection.jsx';
+import DeploymentStatusSection from './components/DeploymentStatusSection.jsx';
 import CommentSection from './components/CommentSection.jsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.jsx';
 import { formatDate } from '../../lib/utils.js';
@@ -80,6 +81,10 @@ export default function IssueDetailPage() {
       'security.scan.failed',
       'policy.gate.evaluated',
       'policy.gate.overridden',
+      'deployment.queued',
+      'deployment.started',
+      'deployment.completed',
+      'deployment.failed',
       'pipeline.run.received',
       'pipeline.run.completed',
       'pipeline.updated',
@@ -197,6 +202,9 @@ export default function IssueDetailPage() {
 
           {/* Authoritative Governance Policy Gates */}
           <GovernanceGateSection governance={deliveryState?.governance} />
+
+          {/* Authoritative Deployment & Release Governance */}
+          <DeploymentStatusSection deployment={deliveryState?.deployment} />
 
           {/* Comment Stream */}
           <Card>
