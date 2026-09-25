@@ -266,6 +266,34 @@ export const ORCHESTRATION_STATUS = {
 
 export const ORCHESTRATION_STATUS_VALUES = Object.values(ORCHESTRATION_STATUS);
 
+export const ORCHESTRATION_SYNC_STATUS = {
+  SYNCED: 'synced',
+  OUT_OF_SYNC: 'out_of_sync',
+  UNKNOWN: 'unknown',
+};
+
+export const ORCHESTRATION_SYNC_STATUS_VALUES = Object.values(ORCHESTRATION_SYNC_STATUS);
+
+export const ORCHESTRATION_HEALTH_STATUS = {
+  HEALTHY: 'healthy',
+  PROGRESSING: 'progressing',
+  DEGRADED: 'degraded',
+  SUSPENDED: 'suspended',
+  MISSING: 'missing',
+  UNKNOWN: 'unknown',
+};
+
+export const ORCHESTRATION_HEALTH_STATUS_VALUES = Object.values(ORCHESTRATION_HEALTH_STATUS);
+
+export const ORCHESTRATION_DELIVERY_STATUS = {
+  CLAIMED: 'claimed',
+  QUEUED: 'queued',
+  PROCESSED: 'processed',
+  FAILED: 'failed',
+};
+
+export const ORCHESTRATION_DELIVERY_STATUS_VALUES = Object.values(ORCHESTRATION_DELIVERY_STATUS);
+
 export const AUDIT_ACTIONS = {
   // Auth
   USER_REGISTERED: 'user.registered',
@@ -319,10 +347,11 @@ export const AUDIT_ACTIONS = {
   DEPLOYMENT_CREATED: 'deployment.created',
   DEPLOYMENT_UPDATED: 'deployment.updated',
 
-  // Orchestration (Phase 4 Step 1)
+  // Orchestration (Phase 4)
   ORCHESTRATION_INTEGRATION_CREATED: 'orchestration.integration.created',
   ORCHESTRATION_INTEGRATION_UPDATED: 'orchestration.integration.updated',
   ORCHESTRATION_INTEGRATION_DELETED: 'orchestration.integration.deleted',
+  ORCHESTRATION_WEBHOOK_RECEIVED: 'orchestration.webhook.received',
 };
 
 export const ENTITY_TYPES = {
@@ -340,6 +369,7 @@ export const ENTITY_TYPES = {
   POLICY_GATE_RESULT: 'policy_gate_result',
   DEPLOYMENT: 'deployment',
   ORCHESTRATION_INTEGRATION: 'orchestration_integration',
+  ORCHESTRATION_DELIVERY: 'orchestration_delivery',
 };
 
 // Issue counter starts at 100 so first issue is PROJECT-101

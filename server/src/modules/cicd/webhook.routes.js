@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { handleGitHubWebhook, handleJenkinsWebhook } from './cicd.controller.js';
 import { handleSecurityWebhook } from '../security/security.controller.js';
+import { handleOrchestrationWebhook } from '../orchestration/orchestration.controller.js';
 
 const router = Router();
 
@@ -12,5 +13,8 @@ router.post('/jenkins/:integrationId', handleJenkinsWebhook);
 
 // Public Security scanner webhook endpoint (X-Security-Token authenticated against integrationId)
 router.post('/security/:integrationId', handleSecurityWebhook);
+
+// Public Orchestration webhook endpoint (X-Orchestration-Token authenticated against integrationId)
+router.post('/orchestration/:integrationId', handleOrchestrationWebhook);
 
 export default router;
