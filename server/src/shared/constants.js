@@ -250,6 +250,22 @@ export const DEPLOYMENT_EVENTS = {
 
 export const DEPLOYMENT_EVENT_VALUES = Object.values(DEPLOYMENT_EVENTS);
 
+// Orchestration (Phase 4)
+export const ORCHESTRATION_PROVIDER = {
+  KUBERNETES: 'kubernetes',
+  ARGOCD: 'argocd',
+};
+
+export const ORCHESTRATION_PROVIDER_VALUES = Object.values(ORCHESTRATION_PROVIDER);
+
+export const ORCHESTRATION_STATUS = {
+  CONNECTED: 'connected',
+  ERROR: 'error',
+  UNREACHABLE: 'unreachable',
+};
+
+export const ORCHESTRATION_STATUS_VALUES = Object.values(ORCHESTRATION_STATUS);
+
 export const AUDIT_ACTIONS = {
   // Auth
   USER_REGISTERED: 'user.registered',
@@ -302,6 +318,11 @@ export const AUDIT_ACTIONS = {
   // Deployment (Phase 3 Step 8)
   DEPLOYMENT_CREATED: 'deployment.created',
   DEPLOYMENT_UPDATED: 'deployment.updated',
+
+  // Orchestration (Phase 4 Step 1)
+  ORCHESTRATION_INTEGRATION_CREATED: 'orchestration.integration.created',
+  ORCHESTRATION_INTEGRATION_UPDATED: 'orchestration.integration.updated',
+  ORCHESTRATION_INTEGRATION_DELETED: 'orchestration.integration.deleted',
 };
 
 export const ENTITY_TYPES = {
@@ -318,6 +339,7 @@ export const ENTITY_TYPES = {
   GOVERNANCE_POLICY: 'governance_policy',
   POLICY_GATE_RESULT: 'policy_gate_result',
   DEPLOYMENT: 'deployment',
+  ORCHESTRATION_INTEGRATION: 'orchestration_integration',
 };
 
 // Issue counter starts at 100 so first issue is PROJECT-101
