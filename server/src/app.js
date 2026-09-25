@@ -37,6 +37,7 @@ app.use(
       'X-GitHub-Event',
       'X-Jenkins-Token',
       'X-Security-Token',
+      'X-Orchestration-Token',
     ],
   })
 );
