@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "worker:ci": "node src/workers/ci.worker.js",
+    "worker:orchestration": "node src/workers/orchestration.worker.js",
     "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --forceExit --detectOpenHandles",
     "test:watch": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --watch"
   },

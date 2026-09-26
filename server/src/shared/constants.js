@@ -286,8 +286,11 @@ export const ORCHESTRATION_HEALTH_STATUS = {
 export const ORCHESTRATION_HEALTH_STATUS_VALUES = Object.values(ORCHESTRATION_HEALTH_STATUS);
 
 export const ORCHESTRATION_DELIVERY_STATUS = {
+  RECEIVED: 'received',
   CLAIMED: 'claimed',
   QUEUED: 'queued',
+  PROCESSING: 'processing',
+  SUCCEEDED: 'succeeded',
   PROCESSED: 'processed',
   FAILED: 'failed',
 };
@@ -352,6 +355,8 @@ export const AUDIT_ACTIONS = {
   ORCHESTRATION_INTEGRATION_UPDATED: 'orchestration.integration.updated',
   ORCHESTRATION_INTEGRATION_DELETED: 'orchestration.integration.deleted',
   ORCHESTRATION_WEBHOOK_RECEIVED: 'orchestration.webhook.received',
+  ORCHESTRATION_OBSERVATION_RECORDED: 'orchestration.observation.recorded',
+  ORCHESTRATION_RECONCILIATION_SCHEDULED: 'orchestration.reconciliation.scheduled',
 };
 
 export const ENTITY_TYPES = {
@@ -370,6 +375,7 @@ export const ENTITY_TYPES = {
   DEPLOYMENT: 'deployment',
   ORCHESTRATION_INTEGRATION: 'orchestration_integration',
   ORCHESTRATION_DELIVERY: 'orchestration_delivery',
+  ORCHESTRATION_OBSERVATION: 'orchestration_observation',
 };
 
 // Issue counter starts at 100 so first issue is PROJECT-101
