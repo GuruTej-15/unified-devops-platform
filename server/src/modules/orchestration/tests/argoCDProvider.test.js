@@ -176,11 +176,11 @@ describe('Phase 4 Step 2 — Argo CD Provider & Webhook Ingestion (Simulated/Moc
   // 3. Unsupported Provider Rejection
   // ============================================================
   describe('3. Unsupported Provider Rejection', () => {
-    it('rejects kubernetes provider in Step 2 since it is not registered yet', () => {
-      expect(() => getOrchestrationProvider('kubernetes')).toThrow(
-        /Unsupported orchestration provider: 'kubernetes'/
+    it('rejects unsupported provider strings with controlled errors', () => {
+      expect(() => getOrchestrationProvider('helm')).toThrow(
+        /Unsupported orchestration provider: 'helm'/
       );
-      expect(hasOrchestrationProvider('kubernetes')).toBe(false);
+      expect(hasOrchestrationProvider('helm')).toBe(false);
     });
 
     it('rejects unknown or invalid provider strings with controlled errors', () => {

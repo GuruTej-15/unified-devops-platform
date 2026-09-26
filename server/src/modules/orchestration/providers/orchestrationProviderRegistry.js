@@ -1,11 +1,15 @@
 import ArgoCDProvider from './argoCDProvider.js';
+import KubernetesProvider from './kubernetesProvider.js';
 import { ORCHESTRATION_PROVIDER } from '../../../shared/constants.js';
 
 const providers = new Map();
 
-// Initialize default providers (only argocd in Step 2; kubernetes will be added in future steps)
+// Initialize default providers
 const defaultArgoCDProvider = new ArgoCDProvider();
+const defaultKubernetesProvider = new KubernetesProvider();
+
 providers.set(ORCHESTRATION_PROVIDER.ARGOCD, defaultArgoCDProvider);
+providers.set(ORCHESTRATION_PROVIDER.KUBERNETES, defaultKubernetesProvider);
 
 /**
  * Validates that a provider instance conforms to BaseOrchestrationProvider contract.
@@ -35,7 +39,7 @@ function validateProviderContract(providerInstance) {
 /**
  * Get an orchestration provider adapter by provider identifier.
  *
- * @param {string} providerName - e.g. 'argocd'
+ * @param {string} providerName - e.g. 'argocd', 'kubernetes'
  * @returns {import('./baseOrchestrationProvider.js').default}
  */
 export function getOrchestrationProvider(providerName) {
@@ -91,6 +95,7 @@ export function hasOrchestrationProvider(name) {
 export function _resetOrchestrationProviderRegistry() {
   providers.clear();
   providers.set(ORCHESTRATION_PROVIDER.ARGOCD, defaultArgoCDProvider);
+  providers.set(ORCHESTRATION_PROVIDER.KUBERNETES, defaultKubernetesProvider);
 }
 
-export { defaultArgoCDProvider };
+export { defaultArgoCDProvider, defaultKubernetesProvider };
