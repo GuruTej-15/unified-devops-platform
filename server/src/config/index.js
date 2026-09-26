@@ -48,6 +48,15 @@ const config = {
       parseInt(process.env.CI_RECONCILIATION_INTERVAL_MINUTES, 10) || 15,
     eventChannel: process.env.CI_EVENT_CHANNEL || 'cicd:pipeline-events',
   },
+
+  orchestration: {
+    queueName: process.env.ORCHESTRATION_QUEUE_NAME || 'orchestration-events',
+    workerConcurrency: parseInt(process.env.ORCHESTRATION_WORKER_CONCURRENCY, 10) || 5,
+    jobAttempts: parseInt(process.env.ORCHESTRATION_JOB_ATTEMPTS, 10) || 5,
+    backoffMs: parseInt(process.env.ORCHESTRATION_JOB_BACKOFF_MS, 10) || 2000,
+    reconciliationIntervalMinutes:
+      parseInt(process.env.ORCHESTRATION_RECONCILIATION_INTERVAL_MINUTES, 10) || 10,
+  },
 };
 
 // Validate critical config in production

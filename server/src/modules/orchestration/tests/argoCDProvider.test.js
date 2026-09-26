@@ -538,7 +538,7 @@ describe('Phase 4 Step 2 — Argo CD Provider & Webhook Ingestion (Simulated/Moc
       expect(res.body.message).toBe('Orchestration webhook accepted');
       expect(res.body.data.deliveryId).toBeDefined();
       expect(res.body.data.duplicate).toBe(false);
-      expect(res.body.data.status).toBe('claimed');
+      expect(['claimed', 'queued']).toContain(res.body.data.status);
     });
   });
 
@@ -667,7 +667,7 @@ describe('Phase 4 Step 2 — Argo CD Provider & Webhook Ingestion (Simulated/Moc
 
       const delivery = await OrchestrationDelivery.findById(res.body.data.deliveryId);
       expect(delivery).toBeDefined();
-      expect(delivery.status).toBe('claimed');
+      expect(['claimed', 'queued']).toContain(delivery.status);
       expect(delivery.integration.toString()).toBe(argoIntegration._id.toString());
       expect(delivery.project.toString()).toBe(project._id.toString());
       expect(delivery.applicationName).toBe('payment-service');
@@ -852,7 +852,7 @@ describe('Phase 4 Step 2 — Argo CD Provider & Webhook Ingestion (Simulated/Moc
           integrationId: argoIntegration._id,
           provider: 'argocd',
           applicationName: 'payment-service',
-          status: 'claimed',
+          status: expect.stringMatching(/claimed|queued/),
         })
       );
 

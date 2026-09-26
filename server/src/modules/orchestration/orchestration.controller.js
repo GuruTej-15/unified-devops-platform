@@ -7,6 +7,7 @@ import {
   ORCHESTRATION_PROVIDER_VALUES,
   DEPLOYMENT_ENVIRONMENT,
   DEPLOYMENT_ENVIRONMENT_VALUES,
+  ORCHESTRATION_DELIVERY_STATUS,
   AUDIT_ACTIONS,
   ENTITY_TYPES,
 } from '../../shared/constants.js';
@@ -602,19 +603,37 @@ export async function handleOrchestrationWebhook(req, res) {
     });
   }
 
-  // 9. Queue boundary handoff (stub for future BullMQ worker)
-  const enqueueResult = await enqueueOrchestrationJob({
-    deliveryId: claim.delivery._id,
-    integrationId: integration._id,
-    projectId,
-    applicationName,
-    payload: req.body,
-  });
+  // 9. Enqueue durable BullMQ job
+  try {
+    const enqueueResult = await enqueueOrchestrationJob({
+      deliveryId: claim.delivery._id,
+      integrationId: integration._id,
+      projectId,
+      applicationName,
+      reason: 'webhook',
+    });
 
-  if (enqueueResult?.enqueued && enqueueResult.jobId) {
+    if (enqueueResult?.enqueued && enqueueResult.jobId) {
+      await OrchestrationDelivery.findByIdAndUpdate(claim.delivery._id, {
+        status: ORCHESTRATION_DELIVERY_STATUS.QUEUED,
+        jobId: enqueueResult.jobId,
+      });
+      claim.delivery.status = ORCHESTRATION_DELIVERY_STATUS.QUEUED;
+      claim.delivery.jobId = enqueueResult.jobId;
+    }
+  } catch (queueErr) {
+    logger.error(
+      `Orchestration queue unavailable for delivery ${claim.delivery._id}: ${queueErr.message}`
+    );
     await OrchestrationDelivery.findByIdAndUpdate(claim.delivery._id, {
-      status: 'queued',
-      jobId: enqueueResult.jobId,
+      status: ORCHESTRATION_DELIVERY_STATUS.FAILED,
+      errorMessage: 'Queue infrastructure unavailable',
+      processedAt: new Date(),
+    });
+    return res.status(503).json({
+      success: false,
+      message: 'Orchestration queue unavailable. Please retry later.',
+      error: 'QUEUE_UNAVAILABLE',
     });
   }
 
