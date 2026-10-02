@@ -14,6 +14,7 @@ import {
   ORCHESTRATION_HEALTH_STATUS,
   ORCHESTRATION_SYNC_STATUS,
 } from '../../shared/constants.js';
+import DeploymentService from '../deployment/deployment.service.js';
 import logger from '../../shared/logger.js';
 
 /**
@@ -290,6 +291,16 @@ export async function processOrchestrationJob(jobData = {}) {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    // 10.5 Project observation into authoritative Deployment state
+    let deploymentResult = null;
+    try {
+      deploymentResult = await DeploymentService.ingestOrchestrationObservation(observation);
+    } catch (depErr) {
+      logger.error(
+        `Failed to project orchestration observation into deployment state: ${depErr.message}`
+      );
+    }
+
     // 11. Update integration status
     await OrchestrationIntegration.findByIdAndUpdate(integration._id, {
       status: ORCHESTRATION_STATUS.CONNECTED,
@@ -312,6 +323,9 @@ export async function processOrchestrationJob(jobData = {}) {
     return {
       success: true,
       observationId: observation._id,
+      deploymentId: deploymentResult?.deployment?._id || null,
+      isNewDeployment: Boolean(deploymentResult?.isNew),
+      deploymentChanged: Boolean(deploymentResult?.changed),
       workloadIdentifier,
       healthStatus,
       syncStatus,

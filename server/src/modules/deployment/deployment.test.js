@@ -136,10 +136,10 @@ describe('Phase 3 Step 8 — Deployment & Release Governance (Tier A)', () => {
       expect(dep.isGovernanceViolation).toBe(false);
     });
 
-    it('rejects invalid providers (e.g. kubernetes, argocd)', async () => {
+    it('rejects invalid providers (e.g. nomad, docker_swarm)', async () => {
       const invalid = new Deployment({
         project: project._id,
-        provider: 'kubernetes',
+        provider: 'nomad',
         environment: 'production',
         externalDeploymentId: 'dep-invalid-provider',
         status: DEPLOYMENT_STATUS.SUCCESS,
@@ -447,7 +447,7 @@ describe('Phase 3 Step 8 — Deployment & Release Governance (Tier A)', () => {
         .post(`/api/v1/projects/${project._id}/deployments`)
         .set('Cookie', devAuthCookie)
         .send({
-          provider: 'argocd',
+          provider: 'nomad',
           environment: 'production',
           externalDeploymentId: 'argo-99',
           status: 'success',

@@ -117,6 +117,12 @@ const deploymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    orchestrationObservation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationObservation',
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
