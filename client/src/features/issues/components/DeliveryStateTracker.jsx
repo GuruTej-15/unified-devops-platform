@@ -143,12 +143,56 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
     const latest = dep.latestDeployment;
     depUrl = latest.url;
     const provUpper = (latest.provider || 'CI').toUpperCase();
+    const provLower = (latest.provider || '').toLowerCase();
+    const orchestration =
+      latest.orchestration || latest.metadata?.orchestration || dep.orchestration || null;
+    const drift = latest.drift || latest.metadata?.drift || dep.drift || null;
+    const hasDrift = Boolean(drift?.hasDrift || dep.hasDrift);
+    const isCloudNative =
+      provLower === 'kubernetes' || provLower === 'argocd' || Boolean(orchestration);
+
+    const workload = orchestration?.workload || {};
+    const workloadName = workload.name || '';
+    const workloadKind = workload.kind || '';
+    const workloadNamespace = workload.namespace || orchestration?.namespace || '';
+    const healthStatus = (
+      orchestration?.healthStatus ||
+      latest.healthStatus ||
+      dep.healthStatus ||
+      ''
+    ).toLowerCase();
+    const syncStatus = (
+      orchestration?.syncStatus ||
+      latest.syncStatus ||
+      dep.syncStatus ||
+      ''
+    ).toLowerCase();
+
+    let provLabel = provUpper;
+    if (provLower === 'kubernetes') provLabel = 'Kubernetes';
+    else if (provLower === 'argocd') provLabel = 'Argo CD';
+    else if (provLower === 'github_actions') provLabel = 'GitHub Actions';
+    else if (provLower === 'jenkins') provLabel = 'Jenkins';
 
     if (dep.status === 'completed') {
       depStatus = 'completed';
-      depTitle = `✓ ${latest.environment} release (${provUpper})`;
-      depDetail = `Deployed to ${latest.environment}${latest.commitSha ? ` • ${latest.commitSha.substring(0, 7)}` : ''}${latest.duration != null ? ` • ${formatDuration(latest.duration)}` : ''} • Governance: ${latest.governanceDecision || 'EVALUATED'}`;
-      depBadge = dep.isGovernanceViolation ? 'VIOLATION' : 'SUCCESS';
+      const driftNotice = hasDrift ? ' ⚠ DRIFT' : '';
+      depTitle = `✓ ${latest.environment} release (${provLabel})${driftNotice}`;
+
+      if (isCloudNative) {
+        const workloadDesc = workloadName
+          ? `${workloadKind ? `${workloadKind} / ` : ''}${workloadName} (${workloadNamespace || 'default'})`
+          : latest.environment;
+        const healthDesc = healthStatus ? ` • Health: ${healthStatus.toUpperCase()}` : '';
+        const syncDesc = syncStatus ? ` • Sync: ${syncStatus.toUpperCase()}` : '';
+        const driftDesc = hasDrift ? ' • Drift Detected' : ' • In Sync';
+        const govDesc = ` • Governance: ${latest.governanceDecision || 'EVALUATED'}`;
+        depDetail = `${workloadDesc}${healthDesc}${syncDesc}${driftDesc}${govDesc}`;
+      } else {
+        depDetail = `Deployed to ${latest.environment}${latest.commitSha ? ` • ${latest.commitSha.substring(0, 7)}` : ''}${latest.duration != null ? ` • ${formatDuration(latest.duration)}` : ''} • Governance: ${latest.governanceDecision || 'EVALUATED'}`;
+      }
+
+      depBadge = dep.isGovernanceViolation ? 'VIOLATION' : hasDrift ? 'DRIFT' : 'SUCCESS';
     } else if (dep.status === 'failed') {
       depStatus = 'failed';
       depTitle = `✕ ${latest.environment} deployment failed`;
@@ -157,7 +201,7 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
     } else if (dep.status === 'active') {
       depStatus = 'active';
       depTitle = `● Deploying to ${latest.environment}`;
-      depDetail = `Release in progress via ${provUpper}${latest.branch ? ` on ${latest.branch}` : ''}`;
+      depDetail = `Release in progress via ${provLabel}${latest.branch ? ` on ${latest.branch}` : ''}`;
       depBadge = latest.status === 'queued' ? 'QUEUED' : 'IN_PROGRESS';
     }
   }
@@ -332,8 +376,11 @@ export default function DeliveryStateTracker({ issue, activity = {}, deliverySta
                               'bg-sky-50 text-sky-700 border-sky-200 font-mono',
                             stage.badge === 'VIOLATION' &&
                               'bg-red-100 text-red-800 border-red-300 font-mono',
+                            stage.badge === 'DRIFT' &&
+                              'bg-amber-100 text-amber-800 border-amber-300 font-mono',
                             stage.badge === 'WARNING' &&
                               'bg-amber-50 text-amber-700 border-amber-200 font-mono',
+
                             stage.badge === 'OVERRIDDEN' &&
                               'bg-purple-50 text-purple-700 border-purple-200 font-mono',
                             (stage.badge === 'NOT_EVALUATED' || stage.badge === 'NOT_STARTED') &&

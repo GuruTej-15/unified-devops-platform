@@ -209,6 +209,8 @@ export const DEPLOYMENT_PROVIDER = {
   GITHUB_ACTIONS: 'github_actions',
   JENKINS: 'jenkins',
   GENERIC: 'generic',
+  KUBERNETES: 'kubernetes',
+  ARGOCD: 'argocd',
 };
 
 export const DEPLOYMENT_PROVIDER_VALUES = Object.values(DEPLOYMENT_PROVIDER);
