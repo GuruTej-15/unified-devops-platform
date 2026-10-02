@@ -8,7 +8,10 @@ import {
   ShieldCheckIcon,
   ShieldExclamationIcon,
   ArrowTopRightOnSquareIcon,
+  CubeIcon,
+  ServerStackIcon,
 } from '@heroicons/react/24/solid';
+
 import Card from '../../../components/ui/Card.jsx';
 import { cn, formatDate } from '../../../lib/utils.js';
 
@@ -23,6 +26,10 @@ function formatDuration(seconds) {
 function formatProvider(provider) {
   if (!provider) return 'Generic';
   switch (provider.toLowerCase()) {
+    case 'kubernetes':
+      return 'Kubernetes';
+    case 'argocd':
+      return 'Argo CD';
     case 'github_actions':
       return 'GitHub Actions';
     case 'jenkins':
@@ -147,8 +154,117 @@ export default function DeploymentStatusSection({ deployment = {} }) {
     desc: 'Governance evaluation status unknown.',
   };
 
+  // Cloud-Native Orchestration & Workload Metadata
+  const orchestration =
+    latestDeployment?.orchestration ||
+    latestDeployment?.metadata?.orchestration ||
+    deployment?.orchestration ||
+    null;
+  const drift =
+    latestDeployment?.drift || latestDeployment?.metadata?.drift || deployment?.drift || null;
+  const hasDrift = Boolean(drift?.hasDrift ?? deployment?.hasDrift);
+  const driftReasons = Array.isArray(drift?.reasons) ? drift.reasons : [];
+
+  const rawHealthStatus = (
+    orchestration?.healthStatus ||
+    latestDeployment?.healthStatus ||
+    deployment?.healthStatus ||
+    ''
+  ).toLowerCase();
+
+  const rawSyncStatus = (
+    orchestration?.syncStatus ||
+    latestDeployment?.syncStatus ||
+    deployment?.syncStatus ||
+    ''
+  ).toLowerCase();
+
+  const workload = orchestration?.workload || {};
+  const workloadName = workload.name || '';
+  const workloadKind = workload.kind || '';
+  const workloadNamespace = workload.namespace || orchestration?.namespace || '';
+  const runtime =
+    latestDeployment?.runtime ||
+    latestDeployment?.metadata?.runtime ||
+    orchestration?.runtime ||
+    null;
+
+  const providerLower = (latestDeployment?.provider || '').toLowerCase();
+  const isCloudNative =
+    providerLower === 'kubernetes' || providerLower === 'argocd' || Boolean(orchestration);
+
+  const isArgoZeroApps =
+    providerLower === 'argocd' &&
+    (!workloadName || workloadName === 'none' || workloadName === 'unknown') &&
+    rawHealthStatus === 'unknown';
+
+  // Cloud-Native Health Badge config
+  const healthBadgeConfig = {
+    healthy: {
+      label: 'HEALTHY',
+      bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      icon: CheckCircleIcon,
+      iconColor: 'text-emerald-500',
+    },
+    progressing: {
+      label: 'PROGRESSING',
+      bg: 'bg-blue-50 text-blue-700 border-blue-200',
+      icon: ArrowPathIcon,
+      iconColor: 'text-blue-500 animate-spin',
+    },
+    degraded: {
+      label: 'DEGRADED',
+      bg: 'bg-red-50 text-red-700 border-red-200',
+      icon: XCircleIcon,
+      iconColor: 'text-red-500',
+    },
+    suspended: {
+      label: 'SUSPENDED',
+      bg: 'bg-amber-50 text-amber-700 border-amber-200',
+      icon: ClockIcon,
+      iconColor: 'text-amber-500',
+    },
+    missing: {
+      label: 'MISSING',
+      bg: 'bg-red-50 text-red-700 border-red-200',
+      icon: ExclamationTriangleIcon,
+      iconColor: 'text-red-500',
+    },
+    unknown: {
+      label: 'UNKNOWN',
+      bg: 'bg-slate-50 text-slate-600 border-slate-200',
+      icon: ClockIcon,
+      iconColor: 'text-slate-400',
+    },
+  }[rawHealthStatus] || {
+    label: rawHealthStatus ? rawHealthStatus.toUpperCase() : 'UNKNOWN',
+    bg: 'bg-slate-50 text-slate-600 border-slate-200',
+    icon: ClockIcon,
+    iconColor: 'text-slate-400',
+  };
+
+  // Cloud-Native Sync Badge config
+  const syncBadgeConfig = {
+    synced: {
+      label: 'SYNCED',
+      bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    },
+    out_of_sync: {
+      label: 'OUT OF SYNC',
+      bg: 'bg-amber-50 text-amber-700 border-amber-200',
+    },
+    unknown: {
+      label: 'UNKNOWN',
+      bg: 'bg-slate-50 text-slate-600 border-slate-200',
+    },
+  }[rawSyncStatus] || {
+    label: rawSyncStatus ? rawSyncStatus.toUpperCase().replace(/_/g, ' ') : 'UNKNOWN',
+    bg: 'bg-slate-50 text-slate-600 border-slate-200',
+  };
+
   const StatusIcon = statusBadgeConfig.icon;
   const GovIcon = govBadgeConfig.icon;
+  const HealthIcon = healthBadgeConfig.icon;
   const hasDeployment = Boolean(latestDeployment);
 
   return (
@@ -216,6 +332,164 @@ export default function DeploymentStatusSection({ deployment = {} }) {
             </div>
           </div>
         </div>
+
+        {/* Cloud-Native Workload & Cluster State (when observed) */}
+        {isCloudNative && hasDeployment && (
+          <div
+            className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-3"
+            data-testid="cloud-native-workload-card"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+              <div className="flex items-center space-x-2">
+                <ServerStackIcon className="w-4 h-4 text-slate-700" />
+                <span className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                  Cloud-Native Workload Observation
+                </span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-200 text-slate-800 rounded font-semibold uppercase">
+                {formatProvider(latestDeployment.provider)}
+              </span>
+            </div>
+
+            {isArgoZeroApps ? (
+              <div
+                className="p-3 bg-amber-50/70 border border-amber-200 rounded text-xs text-amber-800"
+                data-testid="argo-zero-apps-state"
+              >
+                <div className="flex items-center space-x-1.5 font-bold text-amber-900">
+                  <ClockIcon className="w-4 h-4 text-amber-600" />
+                  <span>Argo CD Connected (0 Applications Configured)</span>
+                </div>
+                <p className="mt-1 text-amber-700">
+                  The Argo CD server is online and authenticated. Currently, no Applications are
+                  configured or synchronized for this repository.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold block">
+                      Workload
+                    </span>
+                    <span
+                      className="font-mono font-bold text-slate-800 truncate block mt-0.5"
+                      title={workloadName || '—'}
+                    >
+                      {workloadKind ? `${workloadKind} / ` : ''}
+                      {workloadName || '—'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold block">
+                      Namespace
+                    </span>
+                    <span className="font-mono text-slate-800 block mt-0.5">
+                      {workloadNamespace || 'default'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold block">
+                      Health Status
+                    </span>
+                    <span
+                      className={cn(
+                        'text-[10px] font-bold px-2 py-0.5 rounded border inline-flex items-center font-mono mt-0.5',
+                        healthBadgeConfig.bg
+                      )}
+                      data-testid="workload-health-badge"
+                    >
+                      <HealthIcon className={cn('w-3 h-3 mr-1', healthBadgeConfig.iconColor)} />
+                      {healthBadgeConfig.label}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold block">
+                      Sync Status
+                    </span>
+                    <span
+                      className={cn(
+                        'text-[10px] font-bold px-2 py-0.5 rounded border inline-block font-mono mt-0.5',
+                        syncBadgeConfig.bg
+                      )}
+                      data-testid="workload-sync-badge"
+                    >
+                      {syncBadgeConfig.label}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Health Message if provided */}
+                {orchestration?.healthMessage && (
+                  <p className="text-xs text-slate-600 bg-white/80 p-2 rounded border border-slate-200/60 font-mono">
+                    {orchestration.healthMessage}
+                  </p>
+                )}
+
+                {/* Runtime Replicas Indicator */}
+                {runtime && runtime.desiredReplicas !== null && (
+                  <div className="flex items-center space-x-4 text-xs text-slate-600 pt-1 border-t border-slate-200/60 font-mono">
+                    <span>
+                      Replicas:{' '}
+                      <strong className="text-slate-800">
+                        {runtime.readyReplicas ?? 0}/{runtime.desiredReplicas}
+                      </strong>{' '}
+                      ready
+                    </span>
+                    {runtime.availableReplicas !== null && (
+                      <span>
+                        Available:{' '}
+                        <strong className="text-slate-800">{runtime.availableReplicas}</strong>
+                      </span>
+                    )}
+                    {runtime.updatedReplicas !== null && (
+                      <span>
+                        Updated:{' '}
+                        <strong className="text-slate-800">{runtime.updatedReplicas}</strong>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Drift Detection Alert Banner */}
+            {hasDrift ? (
+              <div
+                className="p-3 bg-amber-50 border border-amber-300 rounded text-xs text-amber-900"
+                data-testid="deployment-drift-alert"
+              >
+                <div className="flex items-center space-x-1.5 font-bold text-amber-900">
+                  <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Deployment Drift Detected</span>
+                </div>
+                <p className="text-[11px] text-amber-800 mt-1">
+                  The live cluster workload state has diverged from declared desired state:
+                </p>
+                {driftReasons.length > 0 && (
+                  <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-[11px] font-mono text-amber-900">
+                    {driftReasons.map((reason, idx) => (
+                      <li key={idx}>{reason}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : isCloudNative && !isArgoZeroApps ? (
+              <div
+                className="flex items-center space-x-1.5 text-xs text-emerald-700 bg-emerald-50/60 px-2.5 py-1.5 rounded border border-emerald-200/60"
+                data-testid="deployment-no-drift-banner"
+              >
+                <CheckCircleIcon className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>
+                  No drift detected — live workload matches declared desired specification
+                </span>
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Deployment Details Grid or Empty State */}
         {hasDeployment ? (

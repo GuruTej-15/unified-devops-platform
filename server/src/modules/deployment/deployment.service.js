@@ -604,6 +604,11 @@ export default class DeploymentService {
       environment: null,
       governanceDecision: DEPLOYMENT_GOVERNANCE_STATE.NOT_EVALUATED,
       isGovernanceViolation: false,
+      hasDrift: false,
+      healthStatus: null,
+      syncStatus: null,
+      drift: null,
+      runtime: null,
       latestDeployment: null,
     };
 
@@ -656,6 +661,13 @@ export default class DeploymentService {
       const latest = deployments[0];
       const drift = latest.metadata?.drift || null;
       const orchestration = latest.metadata?.orchestration || null;
+      const runtime = latest.metadata?.runtime || null;
+      const mergedOrchestration = orchestration
+        ? {
+            ...orchestration,
+            runtime: runtime || orchestration.runtime || null,
+          }
+        : null;
 
       return {
         status:
@@ -674,6 +686,7 @@ export default class DeploymentService {
         healthStatus: orchestration?.healthStatus || null,
         syncStatus: orchestration?.syncStatus || null,
         drift,
+        runtime,
         latestDeployment: {
           _id: latest._id,
           provider: latest.provider,
@@ -691,7 +704,8 @@ export default class DeploymentService {
           duration: latest.duration,
           errorMessage: latest.errorMessage,
           drift,
-          orchestration,
+          runtime,
+          orchestration: mergedOrchestration,
         },
       };
     } catch (err) {

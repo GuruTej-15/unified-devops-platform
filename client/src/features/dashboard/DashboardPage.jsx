@@ -57,6 +57,10 @@ export default function DashboardPage() {
     socket.on('pipeline.run.received', handleUpdate);
     socket.on('pipeline.run.completed', handleUpdate);
     socket.on('pipeline.updated', handleUpdate);
+    socket.on('deployment.queued', handleUpdate);
+    socket.on('deployment.started', handleUpdate);
+    socket.on('deployment.completed', handleUpdate);
+    socket.on('deployment.failed', handleUpdate);
 
     return () => {
       socket.off('issue.created', handleUpdate);
@@ -67,6 +71,10 @@ export default function DashboardPage() {
       socket.off('pipeline.run.received', handleUpdate);
       socket.off('pipeline.run.completed', handleUpdate);
       socket.off('pipeline.updated', handleUpdate);
+      socket.off('deployment.queued', handleUpdate);
+      socket.off('deployment.started', handleUpdate);
+      socket.off('deployment.completed', handleUpdate);
+      socket.off('deployment.failed', handleUpdate);
     };
   }, [projectId]);
 
